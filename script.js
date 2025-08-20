@@ -214,6 +214,12 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   });
 });
 
+function showSection(name) {
+  document.getElementById('add-section').style.display = name === 'add' ? 'block' : 'none';
+  document.getElementById('quiz-section').style.display = name === 'quiz' ? 'block' : 'none';
+
+  if (name === 'quiz') startQuiz();
+}
 
 
 /*
