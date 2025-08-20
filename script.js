@@ -5,11 +5,14 @@ let customWords = [];
 const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbzvPHN406Iw0CZ61D71KJ84nczrekcZRLUqyDM3htB4xFwtHo-7y9Gg1oCVocHhZl06/exec';
 
 window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('loading').style.display = 'block';
   fetch(SHEET_API_URL)
     .then(res => res.json())
     .then(data => {
       customWords = data;
       window.words = customWords;
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('word-container').style.display = 'block';
       renderWords(customWords);
       updateProgressBar();
     });
@@ -37,28 +40,41 @@ function renderWords(words = customWords) {
   const container = document.getElementById('word-container');
   container.innerHTML = '';
 
-  words.forEach((word, index) => {
-    const isLearned = learnedWords[word.id] || false;
+  const batchSize = 10;
+  let index = 0;
 
-    const card = document.createElement('div');
-    card.className = 'word-card';
-    card.innerHTML = `
-      <h2 contenteditable="true" onblur="editWord(${index}, 'word', this.textContent)">${word.word}</h2>
-      <p class="meaning" style="display:none;"><strong>意味:</strong> <span contenteditable="true" onblur="editWord(${index}, 'meaning', this.textContent)">${word.meaning}</span></p>
-      <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
-      <p><em>例文:</em> <span contenteditable="true" onblur="editWord(${index}, 'example', this.textContent)">${word.example}</span></p>
-      <p><small>カテゴリー: <span contenteditable="true" onblur="editWord(${index}, 'category', this.textContent)">${word.category}</span></small></p>
-      <label>
-        <input type="checkbox" ${isLearned ? 'checked' : ''} onchange="toggleLearned('${word.id}', this.checked)">
-        習得済み
-      </label>
-      <button onclick="deleteWord(${index})">削除</button>
-    `;
-    container.appendChild(card);
-  });
+  function renderBatch() {
+    const slice = words.slice(index, index + batchSize);
+    slice.forEach((word, i) => {
+      const isLearned = learnedWords[word.id] || false;
+      const card = document.createElement('div');
+      card.className = 'word-card';
+      card.innerHTML = `
+        <h2 contenteditable="true" onblur="editWord(${index}, 'word', this.textContent)">${word.word}</h2>
+        <p class="meaning" style="display:none;"><strong>意味:</strong> <span contenteditable="true" onblur="editWord(${index}, 'meaning', this.textContent)">${word.meaning}</span></p>
+        <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
+        <p><em>例文:</em> <span contenteditable="true" onblur="editWord(${index}, 'example', this.textContent)">${word.example}</span></p>
+        <p><small>カテゴリー: <span contenteditable="true" onblur="editWord(${index}, 'category', this.textContent)">${word.category}</span></small></p>
+        <label>
+          <input type="checkbox" ${isLearned ? 'checked' : ''} onchange="toggleLearned('${word.id}', this.checked)">
+          習得済み
+        </label>
+        <button onclick="deleteWord(${index})">削除</button>
+      `;
+      container.appendChild(card);
+    });
 
-  updateProgressBar();
+    index += batchSize;
+    if (index < words.length) {
+      setTimeout(renderBatch, 50); // 少しずつ描画
+    } else {
+      updateProgressBar();
+    }
+  }
+
+  renderBatch();
 }
+
 
 function editWord(index, field, value) {
   customWords[index][field] = value.trim();
