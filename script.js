@@ -4,45 +4,69 @@ let customWords = [];
 
 const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbzvPHN406Iw0CZ61D71KJ84nczrekcZRLUqyDM3htB4xFwtHo-7y9Gg1oCVocHhZl06/exec';
 
-
-function loadWords() {
-  openDB(db => {
-    const tx = db.transaction('words', 'readonly');
+function useDB(mode, callback) {
+  const request = indexedDB.open('WordDB', 1);
+  request.onupgradeneeded = e => {
+    e.target.result.createObjectStore('words', { keyPath: 'id' });
+  };
+  request.onsuccess = e => {
+    const db = e.target.result;
+    const tx = db.transaction('words', mode);
     const store = tx.objectStore('words');
-    const getAll = store.getAll();
-    getAll.onsuccess = () => {
-      customWords = getAll.result;
-      renderWords();
-      updateProgressBar();
+    callback(store);
+  };
+}
 
-      // Google Sheetsから最新データ取得してキャッシュ更新
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('loading').style.display = 'block';
+
+  useDB('readonly', store => {
+    store.getAll().onsuccess = e => {
+      const localWords = e.target.result;
+      if (localWords.length > 0) {
+        customWords = localWords;
+        renderWords();
+      }
+
       fetch(SHEET_API_URL)
         .then(res => res.json())
         .then(data => {
           customWords = data;
-          openDB(db => {
-            const tx = db.transaction('words', 'readwrite');
-            const store = tx.objectStore('words');
+          useDB('readwrite', store => {
             store.clear();
             data.forEach(word => store.put(word));
           });
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('word-container').style.display = 'block';
           renderWords();
-          updateProgressBar();
         });
     };
   });
+});
+
+
+function addWord(wordObj) {
+  useDB('readwrite', store => store.put(wordObj));
+  fetch(SHEET_API_URL, { method: 'POST', body: JSON.stringify(wordObj) });
+  customWords.push(wordObj);
+  renderWords();
 }
 
-window.addEventListener('DOMContentLoaded', loadWords);
+function editWord(index, field, value) {
+  const word = customWords[index];
+  word[field] = value.trim();
+  useDB('readwrite', store => store.put(word));
+  fetch(SHEET_API_URL, { method: 'PUT', body: JSON.stringify(word) });
+  renderWords();
+}
 
-
-function openDB(callback) {
-  const request = indexedDB.open('WordDB', 1);
-  request.onupgradeneeded = e => {
-    const db = e.target.result;
-    db.createObjectStore('words', { keyPath: 'id' });
-  };
-  request.onsuccess = e => callback(e.target.result);
+function deleteWord(index) {
+  const id = customWords[index].id;
+  if (!confirm('この単語を削除しますか？')) return;
+  customWords.splice(index, 1);
+  useDB('readwrite', store => store.delete(id));
+  fetch(`${SHEET_API_URL}?id=${id}`, { method: 'DELETE' });
+  renderWords();
 }
 
 function toggleLearned(id, checked) {
@@ -73,75 +97,35 @@ function renderWords(words = customWords) {
   function renderBatch() {
     const slice = words.slice(index, index + batchSize);
     slice.forEach((word, i) => {
+      const actualIndex = i + index;
       const isLearned = learnedWords[word.id] || false;
+
       const card = document.createElement('div');
       card.className = 'word-card';
       card.innerHTML = `
-        <h2 contenteditable="true" onblur="editWord(${index}, 'word', this.textContent)">${word.word}</h2>
-        <p class="meaning" style="display:none;"><strong>意味:</strong> <span contenteditable="true" onblur="editWord(${index}, 'meaning', this.textContent)">${word.meaning}</span></p>
+        <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
+        <p class="meaning" style="display:none;"><strong>意味:</strong> <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning', this.textContent)">${word.meaning}</span></p>
         <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
-        <p><em>例文:</em> <span contenteditable="true" onblur="editWord(${index}, 'example', this.textContent)">${word.example}</span></p>
-        <p><small>カテゴリー: <span contenteditable="true" onblur="editWord(${index}, 'category', this.textContent)">${word.category}</span></small></p>
+        <p><em>例文:</em> <span contenteditable="true" onblur="editWord(${actualIndex}, 'example', this.textContent)">${word.example}</span></p>
+        <p><small>カテゴリー: <span contenteditable="true" onblur="editWord(${actualIndex}, 'category', this.textContent)">${word.category}</span></small></p>
         <label>
           <input type="checkbox" ${isLearned ? 'checked' : ''} onchange="toggleLearned('${word.id}', this.checked)">
           習得済み
         </label>
-        <button onclick="deleteWord(${index})">削除</button>
+        <button onclick="deleteWord(${actualIndex})">削除</button>
       `;
       container.appendChild(card);
     });
 
     index += batchSize;
     if (index < words.length) {
-      setTimeout(renderBatch, 50); // 少しずつ描画
+      setTimeout(renderBatch, 50);
     } else {
       updateProgressBar();
     }
   }
 
   renderBatch();
-}
-
-
-function editWord(index, field, value) {
-  customWords[index][field] = value.trim();
-  const updated = customWords[index];
-
-  openDB(db => {
-    const tx = db.transaction('words', 'readwrite');
-    tx.objectStore('words').put(updated);
-  });
-
-
-  updateWordOnSheet(customWords[index]);
-  renderWords();
-}
-
-function updateWordOnSheet(wordObj) {
-  fetch(SHEET_API_URL, {
-    method: 'PUT',
-    body: JSON.stringify(wordObj),
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-
-function deleteWord(index) {
-  const id = customWords[index].id;
-  if (confirm('この単語を削除しますか？')) {
-    customWords.splice(index, 1);
-
-    openDB(db => {
-      const tx = db.transaction('words', 'readwrite');
-      tx.objectStore('words').delete(id);
-    });
-
-    deleteWordFromSheet(id);
-    renderWords();
-  }
-}
-
-function deleteWordFromSheet(id) {
-  fetch(`${SHEET_API_URL}?id=${id}`, { method: 'DELETE' });
 }
 
 function applyFilter(type) {
@@ -212,19 +196,21 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
 
   const newWord = { id, word, meaning, example, category, audio: "" };
 
-  openDB(db => {
-    const tx = db.transaction('words', 'readwrite');
-    tx.objectStore('words').put(wordObj);
-  });
+  // IndexedDB に保存
+  useDB('readwrite', store => store.put(newWord));
 
+  // Google Sheets に送信
   fetch(SHEET_API_URL, {
     method: 'POST',
-    body: JSON.stringify(newWord) // ヘッダーを指定しない
+    body: JSON.stringify(newWord)
   }).then(() => {
     customWords.push(newWord);
     renderWords();
     updateProgressBar();
     this.reset();
+  }).catch(err => {
+    alert('Google Sheetsへの保存に失敗しました');
+    console.error(err);
   });
 });
 
