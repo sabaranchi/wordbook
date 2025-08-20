@@ -1,0 +1,26 @@
+body {
+  font-family: sans-serif;
+  padding: 1rem;
+  background: #f0f4f8;
+}
+
+h1 {
+  text-align: center;
+}
+
+.word-card {
+  background: white;
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+button {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  margin-top: 0.5rem;
+  border-radius: 4px;
+}
