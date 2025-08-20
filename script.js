@@ -4,19 +4,46 @@ let customWords = [];
 
 const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbzvPHN406Iw0CZ61D71KJ84nczrekcZRLUqyDM3htB4xFwtHo-7y9Gg1oCVocHhZl06/exec';
 
-window.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('loading').style.display = 'block';
-  fetch(SHEET_API_URL)
-    .then(res => res.json())
-    .then(data => {
-      customWords = data;
-      window.words = customWords;
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('word-container').style.display = 'block';
-      renderWords(customWords);
+
+function loadWords() {
+  openDB(db => {
+    const tx = db.transaction('words', 'readonly');
+    const store = tx.objectStore('words');
+    const getAll = store.getAll();
+    getAll.onsuccess = () => {
+      customWords = getAll.result;
+      renderWords();
       updateProgressBar();
-    });
-});
+
+      // Google Sheetsから最新データ取得してキャッシュ更新
+      fetch(SHEET_API_URL)
+        .then(res => res.json())
+        .then(data => {
+          customWords = data;
+          openDB(db => {
+            const tx = db.transaction('words', 'readwrite');
+            const store = tx.objectStore('words');
+            store.clear();
+            data.forEach(word => store.put(word));
+          });
+          renderWords();
+          updateProgressBar();
+        });
+    };
+  });
+}
+
+window.addEventListener('DOMContentLoaded', loadWords);
+
+
+function openDB(callback) {
+  const request = indexedDB.open('WordDB', 1);
+  request.onupgradeneeded = e => {
+    const db = e.target.result;
+    db.createObjectStore('words', { keyPath: 'id' });
+  };
+  request.onsuccess = e => callback(e.target.result);
+}
 
 function toggleLearned(id, checked) {
   learnedWords[id] = checked;
@@ -78,6 +105,14 @@ function renderWords(words = customWords) {
 
 function editWord(index, field, value) {
   customWords[index][field] = value.trim();
+  const updated = customWords[index];
+
+  openDB(db => {
+    const tx = db.transaction('words', 'readwrite');
+    tx.objectStore('words').put(updated);
+  });
+
+
   updateWordOnSheet(customWords[index]);
   renderWords();
 }
@@ -94,6 +129,12 @@ function deleteWord(index) {
   const id = customWords[index].id;
   if (confirm('この単語を削除しますか？')) {
     customWords.splice(index, 1);
+
+    openDB(db => {
+      const tx = db.transaction('words', 'readwrite');
+      tx.objectStore('words').delete(id);
+    });
+
     deleteWordFromSheet(id);
     renderWords();
   }
@@ -170,6 +211,11 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   }
 
   const newWord = { id, word, meaning, example, category, audio: "" };
+
+  openDB(db => {
+    const tx = db.transaction('words', 'readwrite');
+    tx.objectStore('words').put(wordObj);
+  });
 
   fetch(SHEET_API_URL, {
     method: 'POST',
