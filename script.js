@@ -5,7 +5,7 @@ let currentQuestion = null;
 let question = null;
 let correctStreaks = JSON.parse(localStorage.getItem('correctStreaks') || '{}');
 
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbx2nQ7SfQU0JP4uVCNbkNpiNIS_OGM1Dw4jixQ3rFdBdmZAUjHOxcZIiOUgUcsFv2WNSA/exec';
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbySnZKlkD5hMlzzLcAaAnAahAmzxPpQi8ROxEsLqjmTUxK59hNcOC-ImrMnfCdwO5qK4Q/exec';
 
 function useDB(mode, callback) {
   const request = indexedDB.open('WordDB', 1);
@@ -50,7 +50,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
 function addWord(wordObj) {
   useDB('readwrite', store => store.put(wordObj));
-  fetch(SHEET_API_URL, { method: 'POST', body: JSON.stringify(wordObj) });
+  fetch(`${SHEET_API_URL}?action=add`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(wordObj)
+  });
   customWords.push(wordObj);
   renderWords();
 }
@@ -59,21 +63,26 @@ function editWord(index, field, value) {
   const word = customWords[index];
   word[field] = value.trim();
   useDB('readwrite', store => store.put(word));
-  fetch(SHEET_API_URL, { method: 'PUT', body: JSON.stringify(word) });
+  fetch(`${SHEET_API_URL}?action=update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(word)
+  });
   renderWords();
 }
 
 function updateLearningStatus(id, learned, streak) {
-  fetch(SHEET_API_URL, {
+  const word = customWords.find(w => w.id === id);
+  if (!word) return;
+  word.learned = learned;
+  word.streak = streak;
+  useDB('readwrite', store => store.put(word));
+  fetch(`${SHEET_API_URL}?action=update`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      id,
-      learned,
-      streak,
-      mode: 'update' // ← 更新モードを明示
-    })
-  }).catch(err => console.error('POST failed:', err));
+    body: JSON.stringify(word)
+  });
+  renderWords();
 }
 
 function deleteWord(index) {
@@ -81,7 +90,11 @@ function deleteWord(index) {
   if (!confirm('この単語を削除しますか？')) return;
   customWords.splice(index, 1);
   useDB('readwrite', store => store.delete(id));
-  fetch(`${SHEET_API_URL}?id=${id}`, { method: 'DELETE' });
+  fetch(`${SHEET_API_URL}?action=delete&id=${id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id })
+  });
   renderWords();
 }
 
