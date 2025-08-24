@@ -102,9 +102,11 @@ function toggleLearned(id, checked) {
   learnedWords[id] = checked;
   localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
 
-  const streak = correctStreaks[id] || 0;
+  if (!checked) {
+    correctStreaks[id] = 0; // ← streak をリセット
+    localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+  }
   updateLearningStatus(id, checked, streak); // ← これを追加
-
   updateProgressBar();
 }
 
