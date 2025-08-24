@@ -101,6 +101,10 @@ function deleteWord(index) {
 function toggleLearned(id, checked) {
   learnedWords[id] = checked;
   localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+
+  const streak = correctStreaks[id] || 0;
+  updateLearningStatus(id, checked, streak); // ← これを追加
+
   updateProgressBar();
 }
 
@@ -299,3 +303,19 @@ function showSection(name) {
 
   if (name === 'quiz') startQuiz();
 }
+
+/*
+CORSを回避できるのはdoGET()とdoPOST()のみだからすべての操作をdoPOST()に統合して、
+function editWord(index, field, value) {
+  const word = customWords[index];
+  word[field] = value.trim();
+  useDB('readwrite', store => store.put(word));
+  fetch(`${SHEET_API_URL}?action=update`, {
+    method: 'POST',
+    body: JSON.stringify(word),
+    mode: 'no-cors'
+  });
+  renderWords();
+}
+のようにmode: 'no-cors'を指定する
+*/
