@@ -66,8 +66,7 @@ function editWord(index, field, value) {
 function updateLearningStatus(id, learned, streak) {
   fetch(SHEET_API_URL, {
     method: 'PUT',
-    body: JSON.stringify({ id, learned, streak }),
-    headers: { 'Content-Type': 'application/json' }
+    body: JSON.stringify({ id, learned, streak })
   }).catch(err => console.error('PUT failed:', err));
 }
 
