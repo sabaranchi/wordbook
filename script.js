@@ -35,6 +35,17 @@ window.addEventListener('DOMContentLoaded', () => {
         .then(res => res.json())
         .then(data => {
           customWords = data;
+
+          // ✅ ここで learnedWords と correctStreaks を再構築
+          learnedWords = {};
+          correctStreaks = {};
+          data.forEach(word => {
+            learnedWords[word.id] = word.learned === true || word.learned === 'TRUE';
+            correctStreaks[word.id] = Number(word.streak) || 0;
+          });
+          localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+          localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+
           useDB('readwrite', store => {
             store.clear();
             data.forEach(word => store.put(word));
