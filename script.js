@@ -79,7 +79,6 @@ function updateLearningStatus(id, learned, streak) {
   useDB('readwrite', store => store.put(word));
   fetch(`${SHEET_API_URL}?action=update`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(word)
   });
   renderWords();
