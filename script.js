@@ -101,12 +101,11 @@ function deleteWord(index) {
 function toggleLearned(id, checked) {
   learnedWords[id] = checked;
   localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
-
   if (!checked) {
     correctStreaks[id] = 0; // ← streak をリセット
     localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
   }
-  updateLearningStatus(id, checked, streak); // ← これを追加
+  updateLearningStatus(id, checked, correctStreaks[id]); // ← これを追加
   updateProgressBar();
 }
 
