@@ -5,7 +5,7 @@ let currentQuestion = null;
 let question = null;
 let correctStreaks = JSON.parse(localStorage.getItem('correctStreaks') || '{}');
 
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbxdj8QFlC1fvL_d6RduHvJZceZk6wOeqOu5vjMYbT05VZO4VBTCR5wQnTJOJ2rggv_fpQ/exec';
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbx2nQ7SfQU0JP4uVCNbkNpiNIS_OGM1Dw4jixQ3rFdBdmZAUjHOxcZIiOUgUcsFv2WNSA/exec';
 
 function useDB(mode, callback) {
   const request = indexedDB.open('WordDB', 1);
@@ -65,9 +65,15 @@ function editWord(index, field, value) {
 
 function updateLearningStatus(id, learned, streak) {
   fetch(SHEET_API_URL, {
-    method: 'PUT',
-    body: JSON.stringify({ id, learned, streak })
-  }).catch(err => console.error('PUT failed:', err));
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id,
+      learned,
+      streak,
+      mode: 'update' // ← 更新モードを明示
+    })
+  }).catch(err => console.error('POST failed:', err));
 }
 
 function deleteWord(index) {
