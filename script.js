@@ -5,7 +5,7 @@ let currentQuestion = null;
 let question = null;
 let correctStreaks = JSON.parse(localStorage.getItem('correctStreaks') || '{}');
 
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbz5rKlJsaHBzM0IRYUoI-MQaRMRzKbrrq71wj9_LYwhFVF_nUU6yHu-ZBSVjUxMMJNE/exec';
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbxdj8QFlC1fvL_d6RduHvJZceZk6wOeqOu5vjMYbT05VZO4VBTCR5wQnTJOJ2rggv_fpQ/exec';
 
 function useDB(mode, callback) {
   const request = indexedDB.open('WordDB', 1);
