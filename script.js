@@ -166,6 +166,8 @@ let currentFilter = 'all'; // 'learned' / 'unlearned' / 'all'
 function applyFilter(type) {
   let filtered = [];
   currentFilter = type;
+  const words = [...customWords]; // 最新状態をコピー
+
   if (type === 'learned') {
     filtered = customWords.filter(word => learnedWords[word.id]);
   } else if (type === 'unlearned') {
@@ -211,11 +213,16 @@ function startQuiz() {
   const question = pool[Math.floor(Math.random() * pool.length)];
   currentQuestion = question;
 
+  const distractors = customWords
+    .filter(w => w.id !== question.id)
+    .map(w => w.meaning);
+
+  const randomDistractors = shuffle(distractors).slice(0, 2);
+
   const choices = shuffle([
     question.meaning,
-    ...customWords.filter(w => w.id !== question.id).slice(0, 2).map(w => w.meaning)
+    ...randomDistractors
   ]);
-
 
   quizArea.innerHTML = `
     <h3>「${question.word}」の意味は？</h3>
