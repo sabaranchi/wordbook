@@ -101,7 +101,7 @@ function deleteWord(index) {
 function toggleLearned(id, checked) {
   learnedWords[id] = checked;
   localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
-  if (!checked) {
+  if (checked !== true) {
     correctStreaks[id] = 0; // ← streak をリセット
     localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
   }
