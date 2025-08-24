@@ -65,8 +65,8 @@ function editWord(index, field, value) {
   useDB('readwrite', store => store.put(word));
   fetch(`${SHEET_API_URL}?action=update`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(word)
+    body: JSON.stringify(word),
+    mode: 'no-cors'
   });
   renderWords();
 }
@@ -79,7 +79,8 @@ function updateLearningStatus(id, learned, streak) {
   useDB('readwrite', store => store.put(word));
   fetch(`${SHEET_API_URL}?action=update`, {
     method: 'POST',
-    body: JSON.stringify(word)
+    body: JSON.stringify(word),
+    mode: 'no-cors'
   });
   renderWords();
 }
@@ -91,8 +92,8 @@ function deleteWord(index) {
   useDB('readwrite', store => store.delete(id));
   fetch(`${SHEET_API_URL}?action=delete&id=${id}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id })
+    body: JSON.stringify({ id }),
+    mode: 'no-cors'
   });
   renderWords();
 }
