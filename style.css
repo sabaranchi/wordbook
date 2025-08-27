@@ -70,3 +70,29 @@ section {
   margin-top: 1rem;
 }
 
+.scrollable {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 0.3em 0;
+  cursor: text;
+  border-bottom: 1px dashed #ccc;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+}
+
+.label {
+  width: 7em;
+  flex-shrink: 0;
+  font-weight: bold;
+}
+
+.value {
+  flex-grow: 1;
+  min-width: 0; /* ✅ これが重要！スクロール領域の幅制限を防ぐ */
+}

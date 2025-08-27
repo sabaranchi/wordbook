@@ -5,19 +5,24 @@ let currentQuestion = null;
 let question = null;
 let correctStreaks = JSON.parse(localStorage.getItem('correctStreaks') || '{}');
 
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbySnZKlkD5hMlzzLcAaAnAahAmzxPpQi8ROxEsLqjmTUxK59hNcOC-ImrMnfCdwO5qK4Q/exec';
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbximFpa3J21ua8wAN4MmvYWANYcEbDjZMNm4YTuPK0ksKiFWFF3nK1M43J8bclwKo_9Uw/exec';
 
 function useDB(mode, callback) {
-  const request = indexedDB.open('WordDB', 1);
-  request.onupgradeneeded = e => {
-    e.target.result.createObjectStore('words', { keyPath: 'id' });
-  };
-  request.onsuccess = e => {
-    const db = e.target.result;
-    const tx = db.transaction('words', mode);
-    const store = tx.objectStore('words');
-    callback(store);
-  };
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('WordDB', 1);
+    request.onupgradeneeded = e => {
+      e.target.result.createObjectStore('words', { keyPath: 'id' });
+    };
+    request.onsuccess = e => {
+      const db = e.target.result;
+      const tx = db.transaction('words', mode);
+      const store = tx.objectStore('words');
+      callback(store);
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
+    };
+    request.onerror = reject;
+  });
 }
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -28,7 +33,6 @@ window.addEventListener('DOMContentLoaded', () => {
       const localWords = e.target.result;
       if (localWords.length > 0) {
         customWords = localWords;
-        renderWords();
       }
 
       fetch(SHEET_API_URL)
@@ -70,15 +74,36 @@ function addWord(wordObj) {
   renderWords();
 }
 
-function editWord(index, field, value) {
+async function editWord(index, field, value) {
+  const cleanValue = value.trim();
   const word = customWords[index];
-  word[field] = value.trim();
-  useDB('readwrite', store => store.put(word));
-  fetch(`${SHEET_API_URL}?action=update`, {
-    method: 'POST',
-    body: JSON.stringify(word),
-    mode: 'no-cors'
+
+  if (!word.id) {
+    word.id = `${word.word}`;
+  }
+
+  word[field] = cleanValue;
+  customWords[index] = word; // ✅ 明示的に更新
+  await new Promise((resolve) => {
+    useDB('readwrite', store => {
+      store.put(word);
+      resolve(); // ✅ IndexedDB 保存完了
+    });
   });
+
+
+  await fetch(`${SHEET_API_URL}?action=update`, {
+    method: 'POST',
+    body: new URLSearchParams({
+      action: 'update',
+      id: word.id,
+      word: word.word,
+      meaning: word.meaning,
+      example: word.example,
+      category: word.category
+    })
+  });
+
   renderWords();
 }
 
@@ -93,7 +118,7 @@ function updateLearningStatus(id, learned, streak) {
     body: JSON.stringify(word),
     mode: 'no-cors'
   });
-  renderWords();
+  //renderWords();
 }
 
 function deleteWord(index) {
@@ -145,8 +170,8 @@ function renderWords(words = customWords) {
       const actualIndex = i + index;
       const isLearned = learnedWords[word.id] || false;
       
-      const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;') : '';
-      const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;') : '';
+      const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>') : '';
+      const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>') : '';
       const categoryHTML = typeof word.category === 'string' ? word.category.replace(/,/g, ',&nbsp;&nbsp;') : Array.isArray(word.category) ? word.category.join(',&nbsp;&nbsp;') : '';
 
       const card = document.createElement('div');
@@ -155,7 +180,7 @@ function renderWords(words = customWords) {
         <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
 
         <p class="meaning" style="display:none;"><strong>意味:</strong> 
-          <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning', this.textContent)">
+          <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning'_jp, this.textContent)">
             ${word.meaning_jp}
           </span>
         </p>
@@ -163,21 +188,21 @@ function renderWords(words = customWords) {
 
         <div class="row">
           <span class="label"><strong>定義:</strong></span>
-          <span class="value" contenteditable="true" onfocus="enrichWordFromDictionary(${actualIndex})" onblur="editWord(${actualIndex}, 'meaning', this.innerHTML)">
+          <span class="value scrollable" contenteditable="true" onblur="editWord(${actualIndex},'meaning', this.innerHTML)">
             ${meaningHTML}
           </span>
         </div>
 
         <div class="row">
-          <span class="label"><strong>例文:</strong></span>
-          <span class="value" contenteditable="true" onfocus="enrichWordFromDictionary(${actualIndex})" onblur="editWord(${actualIndex}, 'example', this.innerHTML)">
+          <span class="label "><strong>例文:</strong></span>
+          <span class="value scrollable" contenteditable="true" onblur="editWord(${actualIndex}, 'example', this.innerHTML)">
             ${exampleHTML}
           </span>
         </div>
 
         <div class="row">
           <span class="label"><strong>カテゴリー:</strong></span>
-          <span class="value" contenteditable="true" onfocus="enrichWordFromDictionary(${actualIndex})" onblur="editWord(${actualIndex}, 'category', this.textContent)">
+          <span class="value" contenteditable="true" onblur="editWord(${actualIndex}, 'category', this.textContent)">
             ${categoryHTML}
           </span>
         </div>
@@ -188,6 +213,7 @@ function renderWords(words = customWords) {
         </label>
 
         <button onclick="deleteWord(${actualIndex})">削除</button>
+        <button id="auto-fill-${actualIndex}" onclick="enrichWordFromDictionary(${actualIndex})">自動入力</button>
       `;
 /*
       const card = document.createElement('div');
@@ -433,12 +459,22 @@ document.getElementById('new-word').addEventListener('input', async function () 
   }, 500); // ← 入力が止まってから0.5秒後に実行
 });
 
+
+
 async function enrichWordFromDictionary(index) {
-  const wordObj = customWords[index];
-  const word = wordObj.word.trim();
-  if (!word) return;
+  const button = document.getElementById(`auto-fill-${index}`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = '取得中...';
+    button.style.opacity = '0.5';
+    button.style.pointerEvents = 'none';
+  }
 
   try {
+    const wordObj = customWords[index];
+    const word = wordObj.word.trim();
+    if (!word) return;
+
     const res = await fetch(`https://cambridge-dictionaryapi.vercel.app/api/dictionary/en/${word}`);
     if (!res.ok) throw new Error('Cambridge API failed');
     const data = await res.json();
@@ -450,38 +486,63 @@ async function enrichWordFromDictionary(index) {
 
     // 例文（最大2つ）
     const allExamples = Array.isArray(data.definition)
-      ? data.definition.flatMap(def =>
-          Array.isArray(def.example)
-            ? def.example.map(e => e.text)
-            : []
-        )
+      ? data.definition.flatMap(def => {
+          if (Array.isArray(def.example)) {
+            return def.example.map(e => e.text);
+          } else if (def.example && typeof def.example.text === 'string') {
+            return [def.example.text];
+          } else {
+            return [];
+          }
+        })
       : [];
-    const formattedExamples = allExamples.slice(0, 2).join('\n');
+
+    const formattedExamples = allExamples
+      .filter(e => e && e.trim() !== '')
+      .slice(0, 2)
+      .join('\n');
 
     // 品詞（カテゴリー）
-    const category = data.pos || '';
+    const category = Array.isArray(data.pos)
+      ? data.pos.join(', ')
+      : data.pos || '';
 
-    // 更新対象のオブジェクトに反映
     wordObj.meaning = formattedMeanings;
     wordObj.example = formattedExamples;
     wordObj.category = category;
 
-    // IndexedDBに保存
-    useDB('readwrite', store => store.put(wordObj));
-
-    // Google Sheetsにも送信
-    fetch(`${SHEET_API_URL}?action=update`, {
-      method: 'POST',
-      body: JSON.stringify(wordObj),
-      mode: 'no-cors'
+    await new Promise((resolve, reject) => {
+      useDB('readwrite', store => {
+        store.put(wordObj);
+        resolve(); // ✅ 保存完了
+      });
     });
 
-    // 再描画
+    const formData = new URLSearchParams();
+    formData.append('action', 'update');
+    formData.append('word', wordObj.word);
+    formData.append('meaning', wordObj.meaning);
+    formData.append('example', wordObj.example);
+    formData.append('category', wordObj.category);
+    formData.append('id', wordObj.id);
+
+    await fetch(`${SHEET_API_URL}?action=update`, {
+      method: 'POST',
+      body: formData,
+    });
     renderWords();
   } catch (err) {
     console.error('辞書情報の取得に失敗しました', err);
+  }finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = '自動入力';
+      button.style.opacity = '1';
+      button.style.pointerEvents = 'auto';
+    }
   }
 }
+
 /*
 CORSを回避できるのはdoGET()とdoPOST()のみだからすべての操作をdoPOST()に統合して、
 function editWord(index, field, value) {
