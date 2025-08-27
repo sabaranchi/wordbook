@@ -144,23 +144,71 @@ function renderWords(words = customWords) {
     slice.forEach((word, i) => {
       const actualIndex = i + index;
       const isLearned = learnedWords[word.id] || false;
+      
+      const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;') : '';
+      const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;') : '';
+      const categoryHTML = typeof word.category === 'string' ? word.category.replace(/,/g, ',&nbsp;&nbsp;') : Array.isArray(word.category) ? word.category.join(',&nbsp;&nbsp;') : '';
 
       const card = document.createElement('div');
       card.className = 'word-card';
       card.innerHTML = `
         <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
-        <p class="meaning" style="display:none;"><strong>意味:</strong> <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning', this.textContent)">${word.meaning}</span></p>
+
+        <p class="meaning" style="display:none;"><strong>意味:</strong> 
+          <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning', this.textContent)">
+            ${word.meaning_jp}
+          </span>
+        </p>
         <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
-        <p><em>例文:</em> <span contenteditable="true" onblur="editWord(${actualIndex}, 'example', this.textContent)">${word.example}</span></p>
-        <p><small>カテゴリー: <span contenteditable="true" onblur="editWord(${actualIndex}, 'category', this.textContent)">${word.category}</span></small></p>
+
+        <div class="row">
+          <span class="label"><strong>定義:</strong></span>
+          <span class="value" contenteditable="true" onfocus="enrichWordFromDictionary(${actualIndex})" onblur="editWord(${actualIndex}, 'meaning', this.innerHTML)">
+            ${meaningHTML}
+          </span>
+        </div>
+
+        <div class="row">
+          <span class="label"><strong>例文:</strong></span>
+          <span class="value" contenteditable="true" onfocus="enrichWordFromDictionary(${actualIndex})" onblur="editWord(${actualIndex}, 'example', this.innerHTML)">
+            ${exampleHTML}
+          </span>
+        </div>
+
+        <div class="row">
+          <span class="label"><strong>カテゴリー:</strong></span>
+          <span class="value" contenteditable="true" onfocus="enrichWordFromDictionary(${actualIndex})" onblur="editWord(${actualIndex}, 'category', this.textContent)">
+            ${categoryHTML}
+          </span>
+        </div>
+
+        <label>
+          <input type="checkbox" ${isLearned ? 'checked' : ''} onchange="toggleLearned('${word.id}', this.checked)">
+          習得済み
+        </label>
+
+        <button onclick="deleteWord(${actualIndex})">削除</button>
+      `;
+/*
+      const card = document.createElement('div');
+      card.className = 'word-card';
+      card.innerHTML = `
+        <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
+        <p class="meaning" style="display:none;"><strong>意味:</strong> <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning', this.textContent)">${word.meaning_jp}</span></p>
+        <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
+        <p><strong>定義:</strong> <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning', this.textContent)">${word.meaning}</span></p>
+        <p><strong>例文:</strong> <span contenteditable="true" onblur="editWord(${actualIndex}, 'example', this.textContent)">${word.example}</span></p>
+        <p><strong>カテゴリー:</strong>  <span contenteditable="true" onblur="editWord(${actualIndex}, 'category', this.textContent)">${word.category}</span></small></p>
         <label>
           <input type="checkbox" ${isLearned ? 'checked' : ''} onchange="toggleLearned('${word.id}', this.checked)">
           習得済み
         </label>
         <button onclick="deleteWord(${actualIndex})">削除</button>
       `;
+*/
       container.appendChild(card);
     });
+
 
     index += batchSize;
     if (index < words.length) {
@@ -227,18 +275,18 @@ function startQuiz() {
 
   const distractors = customWords
     .filter(w => w.id !== question.id)
-    .map(w => w.meaning);
+    .map(w => w.meaning_jp);
 
   const randomDistractors = shuffle(distractors).slice(0, 2);
 
   const choices = shuffle([
-    question.meaning,
+    question.meaning_jp,
     ...randomDistractors
   ]);
 
   quizArea.innerHTML = `
     <h3>「${question.word}」の意味は？</h3>
-    ${choices.map(c => `<button onclick="checkAnswer('${c}', '${question.meaning}', '${question.id}')">${c}</button>`).join('')}
+    ${choices.map(c => `<button onclick="checkAnswer('${c}', '${question.meaning_jp}', '${question.id}')">${c}</button>`).join('')}
   `;
 }
 
@@ -285,6 +333,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   e.preventDefault();
 
   const word = document.getElementById('new-word').value.trim();
+  const meaning_jp = document.getElementById('new-meaning-ja').value.trim();
   const meaning = document.getElementById('new-meaning').value.trim();
   const example = document.getElementById('new-example').value.trim();
   const category = document.getElementById('new-category').value.trim();
@@ -292,11 +341,33 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
 
   if (!word || !meaning) return;
   if (customWords.some(w => w.id === id)) {
-    alert('この単語はすでに追加されています！');
+    const shouldUpdate = confirm('この単語はすでに存在します。\n更新しますか？（キャンセルで中止）');
+    if (!shouldUpdate) return;
+
+    // ✅ 更新処理：IndexedDBとGoogle Sheetsに上書き
+    const updatedWord = { id, word, meaning_jp, meaning, example, category, audio: "" };
+
+    useDB('readwrite', store => store.put(updatedWord));
+
+    fetch(SHEET_API_URL + '?action=update', {
+      method: 'POST',
+      body: JSON.stringify(updatedWord)
+    }).then(() => {
+      const index = customWords.findIndex(w => w.id === id);
+      if (index !== -1) customWords[index] = updatedWord;
+      renderWords();
+      updateProgressBar();
+      this.reset();
+    }).catch(err => {
+      alert('Google Sheetsの更新に失敗しました');
+      console.error(err);
+    });
+
     return;
   }
 
-  const newWord = { id, word, meaning, example, category, audio: "" };
+
+  const newWord = { id, word, meaning_jp, meaning, example, category, audio: "" };
 
   // IndexedDB に保存
   useDB('readwrite', store => store.put(newWord));
@@ -323,6 +394,94 @@ function showSection(name) {
   if (name === 'quiz') startQuiz();
 }
 
+let debounceTimer;
+
+document.getElementById('new-word').addEventListener('input', async function () {
+  clearTimeout(debounceTimer);
+
+  const word = this.value.trim();
+  if (!word) return;
+  debounceTimer = setTimeout(async () => {
+    const lang = 'en'; // 必要に応じて 'en-us', 'en-uk', 'en-cn' などに変更
+
+    try {
+      console.log('fetch開始');
+      const res = await fetch(`https://cambridge-dictionaryapi.vercel.app/api/dictionary/${lang}/${word}`);
+      if (!res.ok) throw new Error('Cambridge API failed');
+      const data = await res.json();
+
+      console.log(data); // デバッグ用
+      console.log(JSON.stringify(data, null, 2));
+      const allExamples = Array.isArray(data.definition)
+        ? data.definition.flatMap(def =>
+            Array.isArray(def.example)
+              ? def.example.map(e => e.text)
+              : []
+          )
+        : [];
+
+      const formattedMeanings = Array.isArray(data.definition)
+        ? data.definition.slice(0, 3).map((d) => `${d.text}`).join('\n')
+        : data.definition || '';
+
+      document.getElementById('new-meaning').value = formattedMeanings
+      document.getElementById('new-example').value = allExamples.slice(0, 2).join('\n');
+      document.getElementById('new-category').value = data.pos || '';
+    } catch (err) {
+      console.error('辞書情報の取得に失敗しました', err);
+    }
+  }, 500); // ← 入力が止まってから0.5秒後に実行
+});
+
+async function enrichWordFromDictionary(index) {
+  const wordObj = customWords[index];
+  const word = wordObj.word.trim();
+  if (!word) return;
+
+  try {
+    const res = await fetch(`https://cambridge-dictionaryapi.vercel.app/api/dictionary/en/${word}`);
+    if (!res.ok) throw new Error('Cambridge API failed');
+    const data = await res.json();
+
+    // 定義（最大3つ）
+    const formattedMeanings = Array.isArray(data.definition)
+      ? data.definition.slice(0, 3).map(d => d.text).join('\n')
+      : data.definition || '';
+
+    // 例文（最大2つ）
+    const allExamples = Array.isArray(data.definition)
+      ? data.definition.flatMap(def =>
+          Array.isArray(def.example)
+            ? def.example.map(e => e.text)
+            : []
+        )
+      : [];
+    const formattedExamples = allExamples.slice(0, 2).join('\n');
+
+    // 品詞（カテゴリー）
+    const category = data.pos || '';
+
+    // 更新対象のオブジェクトに反映
+    wordObj.meaning = formattedMeanings;
+    wordObj.example = formattedExamples;
+    wordObj.category = category;
+
+    // IndexedDBに保存
+    useDB('readwrite', store => store.put(wordObj));
+
+    // Google Sheetsにも送信
+    fetch(`${SHEET_API_URL}?action=update`, {
+      method: 'POST',
+      body: JSON.stringify(wordObj),
+      mode: 'no-cors'
+    });
+
+    // 再描画
+    renderWords();
+  } catch (err) {
+    console.error('辞書情報の取得に失敗しました', err);
+  }
+}
 /*
 CORSを回避できるのはdoGET()とdoPOST()のみだからすべての操作をdoPOST()に統合して、
 function editWord(index, field, value) {
