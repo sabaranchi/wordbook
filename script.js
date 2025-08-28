@@ -63,13 +63,26 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 
-function addWord(wordObj) {
-  useDB('readwrite', store => store.put(wordObj));
-  fetch(`${SHEET_API_URL}?action=add`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(wordObj)
+async function addWord(wordObj) {
+  await new Promise(resolve => {
+    useDB('readwrite', store => {
+      store.put(wordObj);
+      resolve();
+    });
   });
+
+  await fetch(`${SHEET_API_URL}?action=add`, {
+    method: 'POST',
+    body: new URLSearchParams({
+      action: 'add',
+      id: wordObj.id,
+      word: wordObj.word,
+      meaning: wordObj.meaning,
+      example: wordObj.example,
+      category: wordObj.category
+    })
+  });
+
   customWords.push(wordObj);
   renderWords();
 }
@@ -169,9 +182,9 @@ function renderWords(words = customWords) {
     slice.forEach((word, i) => {
       const actualIndex = i + index;
       const isLearned = learnedWords[word.id] || false;
-      
-      const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>') : '';
-      const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>') : '';
+      const meaning_jpHTML = word.meaning_jp ? word.meaning_jp.replace(/\n/g, '<br>') : '<br>';
+      const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
+      const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
       const categoryHTML = typeof word.category === 'string' ? word.category.replace(/,/g, ',&nbsp;&nbsp;') : Array.isArray(word.category) ? word.category.join(',&nbsp;&nbsp;') : '';
 
       const card = document.createElement('div');
@@ -180,8 +193,8 @@ function renderWords(words = customWords) {
         <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
 
         <p class="meaning" style="display:none;"><strong>意味:</strong> 
-          <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning'_jp, this.textContent)">
-            ${word.meaning_jp}
+          <span class="value" contenteditable="true" onblur="editWord(${actualIndex}, 'meaning'_jp, this.innerHTML)">
+            ${meaning_jpHTML}
           </span>
         </p>
         <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
@@ -358,6 +371,13 @@ function shuffle(arr) {
 document.getElementById('add-word-form').addEventListener('submit', function(e) {
   e.preventDefault();
 
+  const addButton = document.getElementById('add-button');
+  addButton.disabled = true;
+  addButton.textContent = '追加中...';
+  addButton.style.opacity = '0.5';
+  addButton.style.cursor = 'not-allowed';
+
+
   const word = document.getElementById('new-word').value.trim();
   const meaning_jp = document.getElementById('new-meaning-ja').value.trim();
   const meaning = document.getElementById('new-meaning').value.trim();
@@ -365,10 +385,24 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   const category = document.getElementById('new-category').value.trim();
   const id = word.toLowerCase().replace(/\s+/g, '-');
 
-  if (!word || !meaning) return;
+  if (!word || !meaning) {
+    addButton.disabled = false;
+    addButton.textContent = '追加';
+    addButton.style.opacity = '1';
+    addButton.style.cursor = 'pointer';
+    return;
+  }
+
   if (customWords.some(w => w.id === id)) {
     const shouldUpdate = confirm('この単語はすでに存在します。\n更新しますか？（キャンセルで中止）');
-    if (!shouldUpdate) return;
+    if (!shouldUpdate) {
+      addButton.disabled = false;
+      addButton.textContent = '追加';
+      addButton.style.opacity = '1';
+      addButton.style.cursor = 'pointer';
+      return;
+    }
+
 
     // ✅ 更新処理：IndexedDBとGoogle Sheetsに上書き
     const updatedWord = { id, word, meaning_jp, meaning, example, category, audio: "" };
@@ -387,6 +421,11 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
     }).catch(err => {
       alert('Google Sheetsの更新に失敗しました');
       console.error(err);
+    }).finally(() => {
+      addButton.disabled = false;
+      addButton.textContent = '追加';
+      addButton.style.opacity = '1';
+      addButton.style.cursor = 'pointer';
     });
 
     return;
@@ -401,7 +440,14 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   // Google Sheets に送信
   fetch(SHEET_API_URL, {
     method: 'POST',
-    body: JSON.stringify(newWord)
+    body: new URLSearchParams({
+      action: 'add',
+      id: newWord.id,
+      word: newWord.word,
+      meaning: newWord.meaning,
+      example: newWord.example,
+      category: newWord.category
+    })
   }).then(() => {
     customWords.push(newWord);
     renderWords();
@@ -410,7 +456,13 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   }).catch(err => {
     alert('Google Sheetsへの保存に失敗しました');
     console.error(err);
+  }).finally(() => {
+    addButton.disabled = false;
+    addButton.textContent = '追加';
+    addButton.style.opacity = '1';
+    addButton.style.cursor = 'pointer';
   });
+
 });
 
 function showSection(name) {
@@ -557,4 +609,8 @@ function editWord(index, field, value) {
   renderWords();
 }
 のようにmode: 'no-cors'を指定する
+
+
+意味のところのonblurがきかない
+onblur = edit() した後意味の保存がされない
 */
