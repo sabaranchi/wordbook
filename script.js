@@ -77,6 +77,7 @@ async function addWord(wordObj) {
       action: 'add',
       id: wordObj.id,
       word: wordObj.word,
+      meaning_jp: wordObj.meaning_jp,
       meaning: wordObj.meaning,
       example: wordObj.example,
       category: wordObj.category
@@ -111,6 +112,7 @@ async function editWord(index, field, value) {
       action: 'update',
       id: word.id,
       word: word.word,
+      meaning_jp: word.meaning_jp,
       meaning: word.meaning,
       example: word.example,
       category: word.category
@@ -193,11 +195,11 @@ function renderWords(words = customWords) {
         <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
 
         <p class="meaning" style="display:none;"><strong>意味:</strong> 
-          <span class="value" contenteditable="true" onblur="editWord(${actualIndex}, 'meaning'_jp, this.innerHTML)">
+          <span class="value" contenteditable="true" onblur="editWord(${actualIndex}, 'meaning_jp', this.innerHTML)">
             ${meaning_jpHTML}
           </span>
         </p>
-        <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
+        <button onclick="const p = this.previousElementSibling; p.style.display='block'; p.querySelector('[contenteditable]').focus(); this.style.display='none';">意味を見る</button>
 
         <div class="row">
           <span class="label"><strong>定義:</strong></span>
@@ -444,6 +446,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
       action: 'add',
       id: newWord.id,
       word: newWord.word,
+      meaning_jp: newWord.meaning_jp,
       meaning: newWord.meaning,
       example: newWord.example,
       category: newWord.category
@@ -612,5 +615,5 @@ function editWord(index, field, value) {
 
 
 意味のところのonblurがきかない
-onblur = edit() した後意味の保存がされない
+onblur = edit() した後,単語を追加したとき意味の保存がされない
 */
