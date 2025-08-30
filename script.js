@@ -199,7 +199,7 @@ function renderWords(words = customWords) {
             ${meaning_jpHTML}
           </span>
         </p>
-        <button onclick="const p = this.previousElementSibling; p.style.display='block'; p.querySelector('[contenteditable]').focus(); this.style.display='none';">意味を見る</button>
+        <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
 
         <div class="row">
           <span class="label"><strong>定義:</strong></span>
