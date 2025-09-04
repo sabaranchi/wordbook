@@ -122,18 +122,28 @@ async function editWord(index, field, value) {
   renderWords();
 }
 
-function updateLearningStatus(id, learned, streak) {
+async function updateLearningStatus(id, learned, streak) {
   const word = customWords.find(w => w.id === id);
   if (!word) return;
   word.learned = learned;
   word.streak = streak;
-  useDB('readwrite', store => store.put(word));
-  fetch(`${SHEET_API_URL}?action=update`, {
-    method: 'POST',
-    body: JSON.stringify(word),
-    mode: 'no-cors'
+
+  await new Promise(resolve => {
+    useDB('readwrite', store => {
+      store.put(word);
+      resolve();
+    });
   });
-  //renderWords();
+
+  await fetch(`${SHEET_API_URL}?action=update`, {
+    method: 'POST',
+    body: new URLSearchParams({
+      action: 'update',
+      id: word.id,
+      learned: word.learned,
+      streak: word.streak
+    })
+  });
 }
 
 function deleteWord(index) {
@@ -306,7 +316,7 @@ function startQuiz() {
   let pool = [];
 
   if (unlearned.length > 0) {
-    pool = [...unlearned, ...learned.slice(0, 2)]; // 未習得を中心に、習得済みも少し混ぜる
+    pool = [...unlearned, ...learned.slice(0, 20)]; // 未習得を中心に、習得済みも少し混ぜる
   } else {
     pool = [...learned];
   }
@@ -612,8 +622,4 @@ function editWord(index, field, value) {
   renderWords();
 }
 のようにmode: 'no-cors'を指定する
-
-
-意味のところのonblurがきかない
-onblur = edit() した後,単語を追加したとき意味の保存がされない
 */
