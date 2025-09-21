@@ -204,7 +204,7 @@ function renderWords(words = customWords) {
       card.innerHTML = `
         <div class="word-header">
           <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
-          <button class="play-btn" onclick="speak(${JSON.stringify(word.word)})" title="発音を再生">🔊</button>
+          <button class="play-btn" title="発音を再生">🔊</button>
         </div>
 
         <p class="meaning" style="display:none;"><strong>意味:</strong> 
@@ -260,6 +260,10 @@ function renderWords(words = customWords) {
         <button onclick="deleteWord(${actualIndex})">削除</button>
       `;
 */
+
+      const playBtn = card.querySelector('.play-btn');
+      if (playBtn) playBtn.addEventListener('click', () => speak(String(word.word)));
+
       container.appendChild(card);
     });
 
@@ -383,7 +387,7 @@ function shuffle(arr) {
   return arr.sort(() => Math.random() - 0.5);
 }
 
-// ---音声再生機能 (Web Speech API) ---
+// --- ここから追加: 音声再生機能 (Web Speech API) ---
 function detectLang(text) {
   if (!text) return 'en-US';
   // 日本語文字が含まれるなら日本語、それ以外は英語を基本にする簡易判定
@@ -521,15 +525,28 @@ let debounceTimer;
 document.getElementById('new-word').addEventListener('input', async function () {
   clearTimeout(debounceTimer);
 
+  // 入力が空なら補完欄をクリアして終了
   const word = this.value.trim();
-  if (!word) return;
+  if (!word) {
+    document.getElementById('new-meaning').value = '';
+    document.getElementById('new-example').value = '';
+    document.getElementById('new-category').value = '';
+    return;
+  }
+
   debounceTimer = setTimeout(async () => {
     const lang = 'en'; // 必要に応じて 'en-us', 'en-uk', 'en-cn' などに変更
 
     try {
       console.log('fetch開始');
       const res = await fetch(`https://cambridge-dictionaryapi.vercel.app/api/dictionary/${lang}/${word}`);
-      if (!res.ok) throw new Error('Cambridge API failed');
+      if (!res.ok) {
+        console.warn('Cambridge API returned', res.status);
+        document.getElementById('new-meaning').value = '';
+        document.getElementById('new-example').value = '';
+        document.getElementById('new-category').value = '';
+        return;
+      }
       const data = await res.json();
 
       console.log(data); // デバッグ用
@@ -553,9 +570,9 @@ document.getElementById('new-word').addEventListener('input', async function () 
       console.error('辞書情報の取得に失敗しました', err);
       document.getElementById('new-meaning').value = '';
       document.getElementById('new-example').value = '';
-      document.getElementById('new-category') = '';
+      document.getElementById('new-category').value = '';
     }
-  }, 300); // ← 入力が止まってから0.5秒後に実行
+  }, 300); // ← 入力が止まってから0.3秒後に実行
 });
 
 
