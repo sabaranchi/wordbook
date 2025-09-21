@@ -160,6 +160,12 @@ async function updateLearningStatus(id, learned, streak) {
   word.learned = learned;
   word.streak = streak;
 
+  // ローカルキャッシュも確実に更新して永続化
+  learnedWords[id] = !!word.learned;
+  correctStreaks[id] = Number(word.streak) || 0;
+  localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+  localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+
   await new Promise(resolve => {
     useDB('readwrite', store => {
       store.put(word);
@@ -167,15 +173,19 @@ async function updateLearningStatus(id, learned, streak) {
     });
   });
 
-  await fetch(`${SHEET_API_URL}?action=update`, {
-    method: 'POST',
-    body: new URLSearchParams({
-      action: 'update',
-      id: word.id,
-      learned: word.learned,
-      streak: word.streak
-    })
-  });
+  try {
+    await fetch(`${SHEET_API_URL}?action=update`, {
+      method: 'POST',
+      body: new URLSearchParams({
+        action: 'update',
+        id: word.id,
+        learned: word.learned,
+        streak: word.streak
+      })
+    });
+  } catch (e) {
+    console.error('Sheets update failed', e);
+  }
 }
 
 function deleteWord(index) {
@@ -440,6 +450,7 @@ function checkAnswer(selected, correct) {
 
     if (selected === correct) {
       correctStreaks[id] = (correctStreaks[id] || 0) + 1;
+      localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
 
       if (correctStreaks[id] >= 3) {
         learnedWords[id] = true;
@@ -447,6 +458,7 @@ function checkAnswer(selected, correct) {
       }
     } else {
       correctStreaks[id] = 0;
+      localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
 
       if (learnedWords[id]) {
         learnedWords[id] = false;
@@ -456,9 +468,12 @@ function checkAnswer(selected, correct) {
       alert(`不正解… 正しくは「${correct}」`);
     }
 
-    localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
-
-    updateLearningStatus(id, learnedWords[id], correctStreaks[id]);
+    // DB とシートに確実に状態を送る（数値化して渡す）
+    try {
+      updateLearningStatus(id, !!learnedWords[id], Number(correctStreaks[id] || 0));
+    } catch (e) {
+      console.error('updateLearningStatus failed', e);
+    }
 
     startQuiz();
   }, 500);
