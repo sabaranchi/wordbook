@@ -202,7 +202,10 @@ function renderWords(words = customWords) {
       const card = document.createElement('div');
       card.className = 'word-card';
       card.innerHTML = `
-        <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
+        <div class="word-header">
+          <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
+          <button class="play-btn" onclick="speak(${JSON.stringify(word.word)})" title="発音を再生">🔊</button>
+        </div>
 
         <p class="meaning" style="display:none;"><strong>意味:</strong> 
           <span class="value" contenteditable="true" onblur="editWord(${actualIndex}, 'meaning_jp', this.innerHTML)">
@@ -380,6 +383,34 @@ function shuffle(arr) {
   return arr.sort(() => Math.random() - 0.5);
 }
 
+// ---音声再生機能 (Web Speech API) ---
+function detectLang(text) {
+  if (!text) return 'en-US';
+  // 日本語文字が含まれるなら日本語、それ以外は英語を基本にする簡易判定
+  if (/[一-龯ぁ-ゔァ-ヴー々〆〤]/.test(text)) return 'ja-JP';
+  return 'en-US';
+}
+
+function speak(text, lang) {
+  if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang || detectLang(text);
+
+  // 利用可能な音声から言語に合うものを選ぶ（なければブラウザ任せ）
+  const voices = window.speechSynthesis.getVoices();
+  if (voices && voices.length) {
+    const shortLang = (utter.lang || '').toLowerCase().slice(0,2);
+    const voice = voices.find(v => v.lang && v.lang.toLowerCase().slice(0,2) === shortLang);
+    if (voice) utter.voice = voice;
+  }
+
+  // 既存の再生を止めてから再生
+  try {
+    window.speechSynthesis.cancel();
+  } catch (e) {}
+  window.speechSynthesis.speak(utter);
+}
+
 document.getElementById('add-word-form').addEventListener('submit', function(e) {
   e.preventDefault();
 
@@ -397,7 +428,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   const category = document.getElementById('new-category').value.trim();
   const id = word.toLowerCase().replace(/\s+/g, '-');
 
-  if (!word || !meaning) {
+  if (!word) {
     addButton.disabled = false;
     addButton.textContent = '追加';
     addButton.style.opacity = '1';
@@ -520,8 +551,11 @@ document.getElementById('new-word').addEventListener('input', async function () 
       document.getElementById('new-category').value = data.pos || '';
     } catch (err) {
       console.error('辞書情報の取得に失敗しました', err);
+      document.getElementById('new-meaning').value = '';
+      document.getElementById('new-example').value = '';
+      document.getElementById('new-category') = '';
     }
-  }, 500); // ← 入力が止まってから0.5秒後に実行
+  }, 300); // ← 入力が止まってから0.5秒後に実行
 });
 
 
