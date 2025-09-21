@@ -4,6 +4,13 @@ let customWords = [];
 let currentQuestion = null;
 let question = null;
 let correctStreaks = JSON.parse(localStorage.getItem('correctStreaks') || '{}');
+let userId = localStorage.getItem('userId');
+if (!userId) {
+  userId = 'user-' + Math.random().toString(36).slice(2);
+  localStorage.setItem('userId', userId);
+}
+document.getElementById('user-id-display').textContent = userId;
+
 
 const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbximFpa3J21ua8wAN4MmvYWANYcEbDjZMNm4YTuPK0ksKiFWFF3nK1M43J8bclwKo_9Uw/exec';
 
@@ -107,7 +114,8 @@ async function addWord(wordObj) {
       meaning_jp: wordObj.meaning_jp,
       meaning: wordObj.meaning,
       example: wordObj.example,
-      category: wordObj.category
+      category: wordObj.category,
+      userId: userId
     })
   });
 
@@ -122,13 +130,11 @@ async function addWord(wordObj) {
 async function editWord(index, field, value) {
   const cleanValue = value.trim();
   const word = customWords[index];
-
-  if (!word.id) {
-    word.id = `${word.word}`;
-  }
+  if (word.userId !== userId) return; // 他人の単語は編集不可
 
   word[field] = cleanValue;
-  customWords[index] = word; // ✅ 明示的に更新
+  customWords[index] = word;
+
   await new Promise((resolve) => {
     useDB('readwrite', store => {
       store.put(word);
@@ -146,7 +152,8 @@ async function editWord(index, field, value) {
       meaning_jp: word.meaning_jp,
       meaning: word.meaning,
       example: word.example,
-      category: word.category
+      category: word.category,
+      userId: word.userId
     })
   });
 
@@ -155,7 +162,7 @@ async function editWord(index, field, value) {
 }
 
 async function updateLearningStatus(id, learned, streak) {
-  const word = customWords.find(w => w.id === id);
+  const word = customWords.find(w => w.id === id && w.userId === userId);
   if (!word) return;
   word.learned = learned;
   word.streak = streak;
@@ -180,7 +187,8 @@ async function updateLearningStatus(id, learned, streak) {
         action: 'update',
         id: word.id,
         learned: word.learned,
-        streak: word.streak
+        streak: word.streak,
+        userId: word.userId
       })
     });
   } catch (e) {
@@ -189,13 +197,16 @@ async function updateLearningStatus(id, learned, streak) {
 }
 
 function deleteWord(index) {
-  const id = customWords[index].id;
+  const word = customWords[index];
+  if (word.userId !== userId) return; // 他人の単語は削除不可
+
+  const id = word.id;
   if (!confirm('この単語を削除しますか？')) return;
   customWords.splice(index, 1);
   useDB('readwrite', store => store.delete(id));
   fetch(`${SHEET_API_URL}?action=delete&id=${id}`, {
     method: 'POST',
-    body: JSON.stringify({ id }),
+    body: JSON.stringify({ id, userId }),
     mode: 'no-cors'
   });
 
@@ -220,8 +231,9 @@ function toggleLearned(id, checked) {
 }
 
 function updateProgressBar() {
-  const total = customWords.length;
-  const validIds = customWords.map(w => w.id);
+  const myWords = customWords.filter(w => w.userId === userId);
+  const total = myWords.length;
+  const validIds = myWords.map(w => w.id);
   const learnedCount = validIds.filter(id => learnedWords[id]).length;
   const percent = total === 0 ? 0 : Math.round((learnedCount / total) * 100);
 
@@ -344,19 +356,21 @@ function renderWords(words = customWords) {
   const container = document.getElementById('word-container');
   container.innerHTML = '';
 
+  const myWords = words.filter(w => w.userId === userId); // ← 自分の単語だけ表示
+
   const batchSize = 10;
   let index = 0;
 
   function renderBatch() {
-    const slice = words.slice(index, index + batchSize);
+    const slice = myWords.slice(index, index + batchSize);
     slice.forEach((word, i) => {
-      const actualIndex = i + index;
+      const actualIndex = customWords.findIndex(w => w.id === word.id);
       const card = renderCard(word, actualIndex);
       container.appendChild(card);
     });
 
     index += batchSize;
-    if (index < words.length) {
+    if (index < myWords.length) {
       setTimeout(renderBatch, 50);
     } else {
       updateProgressBar();
@@ -369,28 +383,29 @@ function renderWords(words = customWords) {
 let currentFilter = 'all'; // 'learned' / 'unlearned' / 'all'
 
 function applyFilter(type) {
-  let filtered = [];
   currentFilter = type;
-  const words = [...customWords]; // 最新状態をコピー
+  const myWords = customWords.filter(w => w.userId === userId); // ← 自分の単語だけ
 
+  let filtered = [];
   if (type === 'learned') {
-    filtered = customWords.filter(word => learnedWords[word.id]);
+    filtered = myWords.filter(word => learnedWords[word.id]);
   } else if (type === 'unlearned') {
-    filtered = customWords.filter(word => !learnedWords[word.id]);
+    filtered = myWords.filter(word => !learnedWords[word.id]);
   } else {
-    filtered = customWords;
+    filtered = myWords;
   }
 
   renderWords(filtered);
 }
 
 function getFilteredWords() {
+  const myWords = customWords.filter(w => w.userId === userId);
   if (currentFilter === 'learned') {
-    return customWords.filter(word => learnedWords[word.id]);
+    return myWords.filter(word => learnedWords[word.id]);
   } else if (currentFilter === 'unlearned') {
-    return customWords.filter(word => !learnedWords[word.id]);
+    return myWords.filter(word => !learnedWords[word.id]);
   } else {
-    return [...customWords];
+    return [...myWords];
   }
 }
 
@@ -404,8 +419,9 @@ function startQuiz() {
   const quizArea = document.getElementById('quiz-area');
   quizArea.innerHTML = '';
 
-  const unlearned = customWords.filter(w => !learnedWords[w.id]);
-  const learned = customWords.filter(w => learnedWords[w.id]);
+  const myWords = customWords.filter(w => w.userId === userId); // ← 自分の単語だけ
+  const unlearned = myWords.filter(w => !learnedWords[w.id]);
+  const learned = myWords.filter(w => learnedWords[w.id]);
 
   let pool = [];
 
@@ -419,7 +435,7 @@ function startQuiz() {
   const question = pool[Math.floor(Math.random() * pool.length)];
   currentQuestion = question;
 
-  const distractors = customWords
+  const distractors = myWords
     .filter(w => w.id !== question.id)
     .map(w => w.meaning_jp);
 
@@ -582,7 +598,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
 
 
     // ✅ 更新処理：IndexedDBとGoogle Sheetsに上書き
-    const updatedWord = { id, word, meaning_jp, meaning, example, category, audio: "" };
+    const updatedWord = { id, word, meaning_jp, meaning, example, category, userId};
 
     useDB('readwrite', store => store.put(updatedWord));
 
@@ -609,7 +625,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   }
 
 
-  const newWord = { id, word, meaning_jp, meaning, example, category, audio: "" };
+  const newWord = { id, word, meaning_jp, meaning, example, category, userId};
 
   // IndexedDB に保存
   useDB('readwrite', store => store.put(newWord));
@@ -624,7 +640,8 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
       meaning_jp: newWord.meaning_jp,
       meaning: newWord.meaning,
       example: newWord.example,
-      category: newWord.category
+      category: newWord.category,
+      userId: newWord.userId
     })
   }).then(() => {
     customWords.push(newWord);
@@ -705,8 +722,6 @@ document.getElementById('new-word').addEventListener('input', async function () 
   }, 300); // ← 入力が止まってから0.3秒後に実行
 });
 
-
-
 async function enrichWordFromDictionary(index) {
   const wordObj = customWords[index];
   const card = wordObj ? document.querySelector(`.word-card[data-id="${CSS.escape(wordObj.id || '')}"]`) : null;
@@ -773,6 +788,7 @@ async function enrichWordFromDictionary(index) {
     formData.append('example', wordObj.example);
     formData.append('category', wordObj.category);
     formData.append('id', wordObj.id);
+    formData.append('userId', wordObj.userId || userId);
 
     await fetch(`${SHEET_API_URL}?action=update`, {
       method: 'POST',
