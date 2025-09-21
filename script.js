@@ -62,6 +62,33 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+function updateCardDOM(word) {
+  const id = word.id;
+  if (!id) return;
+  const container = document.getElementById('word-container');
+  const sel = `.word-card[data-id="${CSS.escape(id)}"]`;
+  const card = container.querySelector(sel);
+  if (!card) return;
+
+  // 更新箇所のみ差分で反映
+  const h2 = card.querySelector('h2');
+  if (h2) h2.textContent = word.word || '';
+
+  const meaningJpEl = card.querySelector('.meaning_jp');
+  if (meaningJpEl) meaningJpEl.innerHTML = (word.meaning_jp || '').replace(/\n/g, '<br>') || '<br>';
+
+  const meaningEnEl = card.querySelector('.meaning_en');
+  if (meaningEnEl) meaningEnEl.innerHTML = (word.meaning || '').replace(/\n/g, '<br>') || '&nbsp;&nbsp;&nbsp;&nbsp;';
+
+  const exampleEl = card.querySelector('.example');
+  if (exampleEl) exampleEl.innerHTML = (word.example || '').replace(/\n/g, '<br>') || '&nbsp;&nbsp;&nbsp;&nbsp;';
+
+  const categoryEl = card.querySelector('.category');
+  if (categoryEl) categoryEl.textContent = word.category || '';
+
+  const chk = card.querySelector('.learned-checkbox');
+  if (chk) chk.checked = !!learnedWords[id];
+}
 
 async function addWord(wordObj) {
   await new Promise(resolve => {
@@ -84,8 +111,12 @@ async function addWord(wordObj) {
     })
   });
 
-  customWords.push(wordObj);
-  renderWords();
+  // 画面に新規カードだけ追加してちらつきを抑える
+  const container = document.getElementById('word-container');
+  const card = renderCard(wordObj, customWords.length - 1);
+  container.appendChild(card);
+
+  updateProgressBar();
 }
 
 async function editWord(index, field, value) {
@@ -119,7 +150,8 @@ async function editWord(index, field, value) {
     })
   });
 
-  renderWords();
+  // 全体再描画の代わりに該当カードを差分更新
+  try { updateCardDOM(word); } catch (e) { console.error(e); }
 }
 
 async function updateLearningStatus(id, learned, streak) {
@@ -156,7 +188,14 @@ function deleteWord(index) {
     body: JSON.stringify({ id }),
     mode: 'no-cors'
   });
-  renderWords();
+
+  // DOMから該当カードを削除（全再描画しない）
+  const container = document.getElementById('word-container');
+  const sel = `.word-card[data-id="${CSS.escape(id)}"]`;
+  const card = container.querySelector(sel);
+  if (card) card.remove();
+
+  updateProgressBar();
 }
 
 function toggleLearned(id, checked) {
@@ -182,6 +221,115 @@ function updateProgressBar() {
   fill.style.backgroundColor = percent < 40 ? 'red' : percent < 80 ? 'orange' : 'green';
 }
 
+function renderCard(word, actualIndex) {
+  const isLearned = learnedWords[word.id] || false;
+  const meaning_jpHTML = word.meaning_jp ? word.meaning_jp.replace(/\n/g, '<br>') : '<br>';
+  const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
+  const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
+  const categoryHTML = typeof word.category === 'string' ? word.category.replace(/,/g, ',&nbsp;&nbsp;') : Array.isArray(word.category) ? word.category.join(',&nbsp;&nbsp;') : '';
+
+  const card = document.createElement('div');
+  card.className = 'word-card';
+  card.dataset.id = word.id;
+  card.innerHTML = `
+    <div class="word-header">
+      <h2 contenteditable="true">${word.word || ''}</h2>
+      <button class="play-btn" title="発音を再生">🔊</button>
+    </div>
+
+    <p class="meaning" style="display:none;"><strong>意味:</strong> 
+      <span class="value meaning_jp" contenteditable="true">${meaning_jpHTML}</span>
+    </p>
+    <button class="show-meaning-btn">意味を見る</button>
+
+    <div class="row">
+      <span class="label"><strong>定義:</strong></span>
+      <span class="value scrollable meaning_en" contenteditable="true">${meaningHTML}</span>
+    </div>
+
+    <div class="row">
+      <span class="label "><strong>例文:</strong></span>
+      <span class="value scrollable example" contenteditable="true">${exampleHTML}</span>
+    </div>
+
+    <div class="row">
+      <span class="label"><strong>カテゴリー:</strong></span>
+      <span class="value category" contenteditable="true">${categoryHTML}</span>
+    </div>
+
+    <label>
+      <input type="checkbox" class="learned-checkbox" ${isLearned ? 'checked' : ''}>
+      習得済み
+    </label>
+
+    <button class="delete-btn">削除</button>
+    <button class="auto-fill-btn">自動入力</button>
+  `;
+
+  // イベント割当（既存の editWord(index, field, value) を使う）
+  const h2 = card.querySelector('h2');
+  if (h2) {
+    h2.addEventListener('blur', () => {
+      const idx = customWords.findIndex(w => w.id === word.id);
+      editWord(idx, 'word', h2.textContent || '');
+    });
+  }
+
+  const playBtn = card.querySelector('.play-btn');
+  if (playBtn) playBtn.addEventListener('click', () => speak(String(word.word)));
+
+  const showBtn = card.querySelector('.show-meaning-btn');
+  const meaningP = card.querySelector('.meaning');
+  if (showBtn && meaningP) {
+    showBtn.addEventListener('click', () => {
+      meaningP.style.display = 'block';
+      showBtn.style.display = 'none';
+    });
+  }
+
+  // contenteditable fields
+  const mapField = { 'meaning_jp': '.meaning_jp', 'meaning': '.meaning_en', 'example': '.example', 'category': '.category' };
+  Object.keys(mapField).forEach(field => {
+    const el = card.querySelector(mapField[field]);
+    if (el) {
+      el.addEventListener('blur', () => {
+        const idx = customWords.findIndex(w => w.id === word.id);
+        editWord(idx, field, el.innerHTML || el.textContent || '');
+      });
+    }
+  });
+
+  const chk = card.querySelector('.learned-checkbox');
+  if (chk) {
+    chk.addEventListener('change', () => toggleLearned(word.id, chk.checked));
+  }
+
+  const delBtn = card.querySelector('.delete-btn');
+  if (delBtn) {
+    delBtn.addEventListener('click', () => {
+      const idx = customWords.findIndex(w => w.id === word.id);
+      if (idx !== -1) deleteWord(idx);
+    });
+  }
+
+  const autoBtn = card.querySelector('.auto-fill-btn');
+  if (autoBtn) {
+    autoBtn.addEventListener('click', () => {
+      const idx = customWords.findIndex(w => w.id === word.id);
+      if (idx !== -1) {
+        // 押下フィードバック & 連打防止
+        autoBtn.disabled = true;
+        autoBtn.textContent = '取得中...';
+        autoBtn.style.opacity = '0.5';
+        autoBtn.style.pointerEvents = 'none';
+        enrichWordFromDictionary(idx);
+      }
+    });
+  }
+
+  return card;
+}
+
 function renderWords(words = customWords) {
   const container = document.getElementById('word-container');
   container.innerHTML = '';
@@ -193,80 +341,9 @@ function renderWords(words = customWords) {
     const slice = words.slice(index, index + batchSize);
     slice.forEach((word, i) => {
       const actualIndex = i + index;
-      const isLearned = learnedWords[word.id] || false;
-      const meaning_jpHTML = word.meaning_jp ? word.meaning_jp.replace(/\n/g, '<br>') : '<br>';
-      const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
-      const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
-      const categoryHTML = typeof word.category === 'string' ? word.category.replace(/,/g, ',&nbsp;&nbsp;') : Array.isArray(word.category) ? word.category.join(',&nbsp;&nbsp;') : '';
-
-      const card = document.createElement('div');
-      card.className = 'word-card';
-      card.innerHTML = `
-        <div class="word-header">
-          <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
-          <button class="play-btn" title="発音を再生">🔊</button>
-        </div>
-
-        <p class="meaning" style="display:none;"><strong>意味:</strong> 
-          <span class="value" contenteditable="true" onblur="editWord(${actualIndex}, 'meaning_jp', this.innerHTML)">
-            ${meaning_jpHTML}
-          </span>
-        </p>
-        <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
-
-        <div class="row">
-          <span class="label"><strong>定義:</strong></span>
-          <span class="value scrollable" contenteditable="true" onblur="editWord(${actualIndex},'meaning', this.innerHTML)">
-            ${meaningHTML}
-          </span>
-        </div>
-
-        <div class="row">
-          <span class="label "><strong>例文:</strong></span>
-          <span class="value scrollable" contenteditable="true" onblur="editWord(${actualIndex}, 'example', this.innerHTML)">
-            ${exampleHTML}
-          </span>
-        </div>
-
-        <div class="row">
-          <span class="label"><strong>カテゴリー:</strong></span>
-          <span class="value" contenteditable="true" onblur="editWord(${actualIndex}, 'category', this.textContent)">
-            ${categoryHTML}
-          </span>
-        </div>
-
-        <label>
-          <input type="checkbox" ${isLearned ? 'checked' : ''} onchange="toggleLearned('${word.id}', this.checked)">
-          習得済み
-        </label>
-
-        <button onclick="deleteWord(${actualIndex})">削除</button>
-        <button id="auto-fill-${actualIndex}" onclick="enrichWordFromDictionary(${actualIndex})">自動入力</button>
-      `;
-/*
-      const card = document.createElement('div');
-      card.className = 'word-card';
-      card.innerHTML = `
-        <h2 contenteditable="true" onblur="editWord(${actualIndex}, 'word', this.textContent)">${word.word}</h2>
-        <p class="meaning" style="display:none;"><strong>意味:</strong> <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning', this.textContent)">${word.meaning_jp}</span></p>
-        <button onclick="this.previousElementSibling.style.display='block'; this.style.display='none';">意味を見る</button>
-        <p><strong>定義:</strong> <span contenteditable="true" onblur="editWord(${actualIndex}, 'meaning', this.textContent)">${word.meaning}</span></p>
-        <p><strong>例文:</strong> <span contenteditable="true" onblur="editWord(${actualIndex}, 'example', this.textContent)">${word.example}</span></p>
-        <p><strong>カテゴリー:</strong>  <span contenteditable="true" onblur="editWord(${actualIndex}, 'category', this.textContent)">${word.category}</span></small></p>
-        <label>
-          <input type="checkbox" ${isLearned ? 'checked' : ''} onchange="toggleLearned('${word.id}', this.checked)">
-          習得済み
-        </label>
-        <button onclick="deleteWord(${actualIndex})">削除</button>
-      `;
-*/
-
-      const playBtn = card.querySelector('.play-btn');
-      if (playBtn) playBtn.addEventListener('click', () => speak(String(word.word)));
-
+      const card = renderCard(word, actualIndex);
       container.appendChild(card);
     });
-
 
     index += batchSize;
     if (index < words.length) {
@@ -323,7 +400,8 @@ function startQuiz() {
   let pool = [];
 
   if (unlearned.length > 0) {
-    pool = [...unlearned, ...learned.slice(0, 20)]; // 未習得を中心に、習得済みも少し混ぜる
+    const sortedByStreak = [...learned].sort((a, b) => (correctStreaks[a.id] || 0) - (correctStreaks[b.id] || 0));
+    pool = [...unlearned, ...sortedByStreak.slice(0, 50)]; // 未習得を中心に、習得済みもcorrectStreaksが小さいほうから５０個混ぜる
   } else {
     pool = [...learned];
   }
@@ -335,7 +413,7 @@ function startQuiz() {
     .filter(w => w.id !== question.id)
     .map(w => w.meaning_jp);
 
-  const randomDistractors = shuffle(distractors).slice(0, 2);
+  const randomDistractors = shuffle(distractors).slice(0, 5);
 
   const choices = shuffle([
     question.meaning_jp,
@@ -343,9 +421,12 @@ function startQuiz() {
   ]);
 
   quizArea.innerHTML = `
-    <h3>「${question.word}」の意味は？</h3>
+    <h3>「${question.word}」の意味は？<button class="play-btn" title="発音を再生">🔊</button></h3>
     ${choices.map(c => `<button onclick="checkAnswer('${c}', '${question.meaning_jp}', '${question.id}')">${c}</button>`).join('')}
   `;
+
+  const playBtn = quizArea.querySelector('.play-btn');
+  if (playBtn) playBtn.addEventListener('click', () => speak(String(question.word)));
 }
 
 function checkAnswer(selected, correct) {
@@ -384,7 +465,13 @@ function checkAnswer(selected, correct) {
 }
 
 function shuffle(arr) {
-  return arr.sort(() => Math.random() - 0.5);
+  // Fisher–Yates shuffle
+  const a = Array.isArray(arr) ? arr.slice() : [];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 // --- ここから追加: 音声再生機能 (Web Speech API) ---
@@ -395,23 +482,51 @@ function detectLang(text) {
   return 'en-US';
 }
 
+let cachedVoice = null;
+function pickVoiceForLang(lang) {
+  const voices = window.speechSynthesis.getVoices() || [];
+  const short = (lang || 'en-US').toLowerCase().slice(0,2);
+
+  // 1) 同言語かつ名前に Female 等を含む音声を優先
+  let v = voices.find(vo => vo.lang && vo.lang.toLowerCase().slice(0,2) === short && /female|女性|frau|femme|woman|girl|女/i.test(vo.name));
+  if (v) return v;
+
+  // 2) 同言語の最初の音声
+  v = voices.find(vo => vo.lang && vo.lang.toLowerCase().slice(0,2) === short);
+  if (v) return v;
+
+  // 3) フォールバックで先頭
+  return voices[0] || null;
+}
+
+// voices が読み込まれたタイミングでキャッシュをセット
+if ('speechSynthesis' in window) {
+  const setInitialVoice = () => {
+    if (!cachedVoice) cachedVoice = pickVoiceForLang('en-US');
+  };
+  // 既に読み込まれていれば即セット
+  if (window.speechSynthesis.getVoices().length) setInitialVoice();
+  // 後から読み込まれる場合に対応
+  window.speechSynthesis.addEventListener('voiceschanged', setInitialVoice);
+}
+
+// 修正: speak 関数で毎回再選択しないよう cachedVoice を使う
 function speak(text, lang) {
   if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = lang || detectLang(text);
 
-  // 利用可能な音声から言語に合うものを選ぶ（なければブラウザ任せ）
-  const voices = window.speechSynthesis.getVoices();
-  if (voices && voices.length) {
-    const shortLang = (utter.lang || '').toLowerCase().slice(0,2);
-    const voice = voices.find(v => v.lang && v.lang.toLowerCase().slice(0,2) === shortLang);
-    if (voice) utter.voice = voice;
+  // すでにキャッシュされた voice があれば使う。なければ候補を取得してキャッシュして使う
+  try {
+    if (!cachedVoice) {
+      cachedVoice = pickVoiceForLang(utter.lang);
+    }
+    if (cachedVoice) utter.voice = cachedVoice;
+  } catch (e) {
+    console.error('voice selection error', e);
   }
 
-  // 既存の再生を止めてから再生
-  try {
-    window.speechSynthesis.cancel();
-  } catch (e) {}
+  try { window.speechSynthesis.cancel(); } catch (e) {}
   window.speechSynthesis.speak(utter);
 }
 
@@ -578,7 +693,9 @@ document.getElementById('new-word').addEventListener('input', async function () 
 
 
 async function enrichWordFromDictionary(index) {
-  const button = document.getElementById(`auto-fill-${index}`);
+  const wordObj = customWords[index];
+  const card = wordObj ? document.querySelector(`.word-card[data-id="${CSS.escape(wordObj.id || '')}"]`) : null;
+  let button = card ? card.querySelector('.auto-fill-btn') : null;
   if (button) {
     button.disabled = true;
     button.textContent = '取得中...';
@@ -587,10 +704,10 @@ async function enrichWordFromDictionary(index) {
   }
 
   try {
-    const wordObj = customWords[index];
-    const word = wordObj.word.trim();
+    if (!wordObj) return;
+    const word = (wordObj.word || '').trim();
     if (!word) return;
-
+    
     const res = await fetch(`https://cambridge-dictionaryapi.vercel.app/api/dictionary/en/${word}`);
     if (!res.ok) throw new Error('Cambridge API failed');
     const data = await res.json();
@@ -646,7 +763,7 @@ async function enrichWordFromDictionary(index) {
       method: 'POST',
       body: formData,
     });
-    renderWords();
+    updateCardDOM(wordObj.word, wordObj.id);
   } catch (err) {
     console.error('辞書情報の取得に失敗しました', err);
   }finally {
