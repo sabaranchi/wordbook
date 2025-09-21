@@ -7,7 +7,10 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>📘 英単語帳  <div id="user-id-display"></div></h1>
+  <h1>📘 英単語帳  <div id="user-id-display"></div><div id="manual-userid-section">
+  <input type="text" id="manual-userid" placeholder="userIdを貼り付け">
+  <button onclick="setManualUserId()">セット</button>
+</div></h1>
 
   <div id="progress-bar-container">
     <label>習得率: <span id="progress-text">0%</span></label>
@@ -20,7 +23,7 @@
     <button onclick="applyFilter('all')">全表示</button>
     <button onclick="applyFilter('learned')">習得済みのみ</button>
     <button onclick="applyFilter('unlearned')">未習得のみ</button>
-    <button onclick="shuffleWords()">ランダム並び替え</button>
+    <button onclick="shuffleWords()">ランダム</button>
   </div>
 
   <nav>

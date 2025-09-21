@@ -10,6 +10,16 @@ if (!userId) {
   localStorage.setItem('userId', userId);
 }
 document.getElementById('user-id-display').textContent = userId;
+function setManualUserId() {
+  const input = document.getElementById('manual-userid');
+  const id = input.value.trim();
+  if (id) {
+    localStorage.setItem('userId', id);
+    alert('userIdをセットしました: ' + id);
+    location.reload(); // 再読み込みで反映
+  }
+}
+
 
 
 const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbximFpa3J21ua8wAN4MmvYWANYcEbDjZMNm4YTuPK0ksKiFWFF3nK1M43J8bclwKo_9Uw/exec';
@@ -788,7 +798,7 @@ async function enrichWordFromDictionary(index) {
     formData.append('example', wordObj.example);
     formData.append('category', wordObj.category);
     formData.append('id', wordObj.id);
-    formData.append('userId', wordObj.userId || userId);
+    formData.append('userId', wordObj.userId || userId);;
 
     await fetch(`${SHEET_API_URL}?action=update`, {
       method: 'POST',
@@ -821,4 +831,5 @@ function editWord(index, field, value) {
   renderWords();
 }
 のようにmode: 'no-cors'を指定する
-*/
+
+javascript:localStorage.setItem('userId','user-0')*/
