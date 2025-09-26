@@ -55,7 +55,10 @@ window.addEventListener('DOMContentLoaded', () => {
       fetch(SHEET_API_URL)
         .then(res => res.json())
         .then(data => {
-          customWords = data;
+          customWords = data.map((word, i) => ({
+            ...word,
+            rowIndex: i
+          }));
 
           // ✅ ここで learnedWords と correctStreaks を再構築
           learnedWords = {};
@@ -69,7 +72,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
           useDB('readwrite', store => {
             store.clear();
-            data.forEach(word => store.put(word));
+            customWords.forEach(word => store.put(word));
           });
           document.getElementById('loading').style.display = 'none';
           document.getElementById('word-container').style.display = 'block';
@@ -720,11 +723,21 @@ document.getElementById('new-word').addEventListener('input', async function () 
         ? data.definition.slice(0, 3).map((d) => `${d.text}`).join('\n')
         : data.definition || '';
 
-      document.getElementById('new-meaning').value = formattedMeanings
-      document.getElementById('new-example').value = allExamples.slice(0, 2).join('\n');
-      document.getElementById('new-category').value = data.pos || '';
+      const formattedExamples = allExamples
+        .filter(e => e && e.trim() !== '')
+        .slice(0, 2)
+        .join('\n');
+
+      const category = Array.isArray(data.pos)
+        ? data.pos.filter(Boolean).join(', ')
+        : typeof data.pos === 'string' ? data.pos : '';
+
+      document.getElementById('new-meaning').value = formattedMeanings;
+      document.getElementById('new-example').value = formattedExamples;
+      document.getElementById('new-category').value = category;
     } catch (err) {
       console.error('辞書情報の取得に失敗しました', err);
+      alert('辞書情報の取得に失敗しました。ネットワークや単語を確認してください。');
       document.getElementById('new-meaning').value = '';
       document.getElementById('new-example').value = '';
       document.getElementById('new-category').value = '';
@@ -804,9 +817,10 @@ async function enrichWordFromDictionary(index) {
       method: 'POST',
       body: formData,
     });
-    updateCardDOM(wordObj.word, wordObj.id);
+    updateCardDOM(wordObj);
   } catch (err) {
     console.error('辞書情報の取得に失敗しました', err);
+    alert('辞書情報の取得に失敗しました。ネットワークや単語を確認してください。');
   }finally {
     if (button) {
       button.disabled = false;
