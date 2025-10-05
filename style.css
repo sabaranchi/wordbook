@@ -8,17 +8,28 @@ h1 {
   text-align: center;
 }
 
+.word-header {
+  display: flex;
+  align-items: center;
+  gap: 30px; /* 要素間の余白 */
+}
+
+.word-header h2 {
+  font-size: 1.7rem; /* 文字を大きくする */
+  margin: 0;        /* 不要な余白を消す */
+}
+
 .word-card {
-  background: white;
+  background: rgb(255, 255, 255);
   padding: 1rem;
   margin: 1rem 0;
   border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 button {
   background: #007bff;
-  color: white;
+  color: rgb(253, 253, 253);
   border: none;
   padding: 0.5rem 1rem;
   margin-top: 0.5rem;
