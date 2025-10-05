@@ -3,6 +3,7 @@ let learnedWords = JSON.parse(localStorage.getItem('learnedWords') || '{}');
 let customWords = [];
 let currentQuestion = null;
 let question = null;
+let quizMode = localStorage.getItem('quizMode') || 'en-to-ja'; // en-to-ja / ja-to-en
 let correctStreaks = JSON.parse(localStorage.getItem('correctStreaks') || '{}');
 let userId = localStorage.getItem('userId');
 if (!userId) {
@@ -12,10 +13,10 @@ if (!userId) {
 document.getElementById('user-id-display').textContent = userId;
 function setManualUserId() {
   const input = document.getElementById('manual-userid');
-  const id = input.value.trim();
-  if (id) {
-    localStorage.setItem('userId', id);
-    alert('userIdをセットしました: ' + id);
+  const word = input.value.trim();
+  if (word) {
+    localStorage.setItem('userId', word);
+    alert('userIdをセットしました: ' + word);
     location.reload(); // 再読み込みで反映
   }
 }
@@ -28,7 +29,7 @@ function useDB(mode, callback) {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('WordDB', 1);
     request.onupgradeneeded = e => {
-      e.target.result.createObjectStore('words', { keyPath: 'id' });
+      e.target.result.createObjectStore('words', { keyPath: 'word' });
     };
     request.onsuccess = e => {
       const db = e.target.result;
@@ -64,8 +65,8 @@ window.addEventListener('DOMContentLoaded', () => {
           learnedWords = {};
           correctStreaks = {};
           data.forEach(word => {
-            learnedWords[word.id] = word.learned === true || word.learned === 'TRUE';
-            correctStreaks[word.id] = Number(word.streak) || 0;
+            learnedWords[word.word] = word.learned === true || word.learned === 'TRUE';
+            correctStreaks[word.word] = Number(word.streak) || 0;
           });
           localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
           localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
@@ -82,11 +83,48 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+//------------------------------------------
+// 🔍 検索機能
+//------------------------------------------
+// ナビボタンをまとめている <nav> を取得
+const nav = document.querySelector('nav');
+
+// 検索ボックス作成
+const searchBox = document.createElement('input');
+searchBox.word = 'search-box';
+searchBox.placeholder = '単語・意味で検索';
+searchBox.style.marginLeft = '10px';
+searchBox.style.padding = '5px';
+searchBox.style.flex = '1';            // 横幅を伸ばす場合
+searchBox.style.minWidth = '150px';    // 最小幅
+searchBox.style.boxSizing = 'border-box';
+
+// nav の中に横並びで追加
+nav.style.display = 'flex';
+nav.style.alignItems = 'center';
+nav.appendChild(searchBox);
+
+
+searchBox.addEventListener('input', () => {
+  const query = searchBox.value.trim().toLowerCase();
+  if (!query) return renderWords();
+
+  const filtered = customWords.filter(w =>
+    w.userId === userId &&
+    (
+      (w.word && w.word.toLowerCase().includes(query)) ||
+      (w.meaning_jp && w.meaning_jp.toLowerCase().includes(query)) ||
+      (w.meaning && w.meaning.toLowerCase().includes(query))
+    )
+  );
+  renderWords(filtered);
+});
+
 function updateCardDOM(word) {
-  const id = word.id;
+  const id = word.word;
   if (!id) return;
   const container = document.getElementById('word-container');
-  const sel = `.word-card[data-id="${CSS.escape(id)}"]`;
+  const sel = `.word-card[data-word="${CSS.escape(id)}"]`;
   const card = container.querySelector(sel);
   if (!card) return;
 
@@ -122,7 +160,6 @@ async function addWord(wordObj) {
     method: 'POST',
     body: new URLSearchParams({
       action: 'add',
-      id: wordObj.id,
       word: wordObj.word,
       meaning_jp: wordObj.meaning_jp,
       meaning: wordObj.meaning,
@@ -160,7 +197,6 @@ async function editWord(index, field, value) {
     method: 'POST',
     body: new URLSearchParams({
       action: 'update',
-      id: word.id,
       word: word.word,
       meaning_jp: word.meaning_jp,
       meaning: word.meaning,
@@ -174,21 +210,21 @@ async function editWord(index, field, value) {
   try { updateCardDOM(word); } catch (e) { console.error(e); }
 }
 
-async function updateLearningStatus(id, learned, streak) {
-  const word = customWords.find(w => w.id === id && w.userId === userId);
-  if (!word) return;
-  word.learned = learned;
-  word.streak = streak;
+async function updateLearningStatus(word, learned, streak) {
+  const word2 = customWords.find(w => w.word === word && w.userId === userId);
+  if (!word2) return;
+  word2.learned = learned;
+  word2.streak = streak;
 
   // ローカルキャッシュも確実に更新して永続化
-  learnedWords[id] = !!word.learned;
-  correctStreaks[id] = Number(word.streak) || 0;
+  learnedWords[word] = !!word2.learned;
+  correctStreaks[word] = Number(word2.streak) || 0;
   localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
   localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
 
   await new Promise(resolve => {
     useDB('readwrite', store => {
-      store.put(word);
+      store.put(word2);
       resolve();
     });
   });
@@ -198,10 +234,10 @@ async function updateLearningStatus(id, learned, streak) {
       method: 'POST',
       body: new URLSearchParams({
         action: 'update',
-        id: word.id,
-        learned: word.learned,
-        streak: word.streak,
-        userId: word.userId
+        word: word2.word,
+        learned: word2.learned,
+        streak: word2.streak,
+        userId: word2.userId
       })
     });
   } catch (e) {
@@ -213,7 +249,7 @@ function deleteWord(index) {
   const word = customWords[index];
   if (word.userId !== userId) return; // 他人の単語は削除不可
 
-  const id = word.id;
+  const id = word.word;
   if (!confirm('この単語を削除しますか？')) return;
   customWords.splice(index, 1);
   useDB('readwrite', store => store.delete(id));
@@ -225,29 +261,29 @@ function deleteWord(index) {
 
   // DOMから該当カードを削除（全再描画しない）
   const container = document.getElementById('word-container');
-  const sel = `.word-card[data-id="${CSS.escape(id)}"]`;
+  const sel = `.word-card[data-word="${CSS.escape(id)}"]`;
   const card = container.querySelector(sel);
   if (card) card.remove();
 
   updateProgressBar();
 }
 
-function toggleLearned(id, checked) {
-  learnedWords[id] = checked;
+function toggleLearned(word, checked) {
+  learnedWords[word] = checked;
   localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
   if (checked !== true) {
-    correctStreaks[id] = 0; // ← streak をリセット
+    correctStreaks[word] = 0; // ← streak をリセット
     localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
   }
-  updateLearningStatus(id, checked, correctStreaks[id]); // ← これを追加
+  updateLearningStatus(word, checked, correctStreaks[word]); // ← これを追加
   updateProgressBar();
 }
 
 function updateProgressBar() {
   const myWords = customWords.filter(w => w.userId === userId);
   const total = myWords.length;
-  const validIds = myWords.map(w => w.id);
-  const learnedCount = validIds.filter(id => learnedWords[id]).length;
+  const validIds = myWords.map(w => w.word);
+  const learnedCount = validIds.filter(word => learnedWords[word]).length;
   const percent = total === 0 ? 0 : Math.round((learnedCount / total) * 100);
 
   document.getElementById('progress-text').textContent = `${percent}%`;
@@ -257,7 +293,7 @@ function updateProgressBar() {
 }
 
 function renderCard(word, actualIndex) {
-  const isLearned = learnedWords[word.id] || false;
+  const isLearned = learnedWords[word.word] || false;
   const meaning_jpHTML = word.meaning_jp ? word.meaning_jp.replace(/\n/g, '<br>') : '<br>';
   const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
   const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
@@ -265,7 +301,7 @@ function renderCard(word, actualIndex) {
 
   const card = document.createElement('div');
   card.className = 'word-card';
-  card.dataset.id = word.id;
+  card.dataset.word = word.word;
   card.innerHTML = `
     <div class="word-header">
       <h2 contenteditable="true">${word.word || ''}</h2>
@@ -305,7 +341,7 @@ function renderCard(word, actualIndex) {
   const h2 = card.querySelector('h2');
   if (h2) {
     h2.addEventListener('blur', () => {
-      const idx = customWords.findIndex(w => w.id === word.id);
+      const idx = customWords.findIndex(w => w.word === word.word);
       editWord(idx, 'word', h2.textContent || '');
     });
   }
@@ -328,7 +364,7 @@ function renderCard(word, actualIndex) {
     const el = card.querySelector(mapField[field]);
     if (el) {
       el.addEventListener('blur', () => {
-        const idx = customWords.findIndex(w => w.id === word.id);
+        const idx = customWords.findIndex(w => w.word === word.word);
         editWord(idx, field, el.innerHTML || el.textContent || '');
       });
     }
@@ -336,13 +372,13 @@ function renderCard(word, actualIndex) {
 
   const chk = card.querySelector('.learned-checkbox');
   if (chk) {
-    chk.addEventListener('change', () => toggleLearned(word.id, chk.checked));
+    chk.addEventListener('change', () => toggleLearned(word.word, chk.checked));
   }
 
   const delBtn = card.querySelector('.delete-btn');
   if (delBtn) {
     delBtn.addEventListener('click', () => {
-      const idx = customWords.findIndex(w => w.id === word.id);
+      const idx = customWords.findIndex(w => w.word === word.word);
       if (idx !== -1) deleteWord(idx);
     });
   }
@@ -350,7 +386,7 @@ function renderCard(word, actualIndex) {
   const autoBtn = card.querySelector('.auto-fill-btn');
   if (autoBtn) {
     autoBtn.addEventListener('click', () => {
-      const idx = customWords.findIndex(w => w.id === word.id);
+      const idx = customWords.findIndex(w => w.word === word.word);
       if (idx !== -1) {
         // 押下フィードバック & 連打防止
         autoBtn.disabled = true;
@@ -377,7 +413,7 @@ function renderWords(words = customWords) {
   function renderBatch() {
     const slice = myWords.slice(index, index + batchSize);
     slice.forEach((word, i) => {
-      const actualIndex = customWords.findIndex(w => w.id === word.id);
+      const actualIndex = customWords.findIndex(w => w.word === word.word);
       const card = renderCard(word, actualIndex);
       container.appendChild(card);
     });
@@ -401,9 +437,9 @@ function applyFilter(type) {
 
   let filtered = [];
   if (type === 'learned') {
-    filtered = myWords.filter(word => learnedWords[word.id]);
+    filtered = myWords.filter(word => learnedWords[word.word]);
   } else if (type === 'unlearned') {
-    filtered = myWords.filter(word => !learnedWords[word.id]);
+    filtered = myWords.filter(word => !learnedWords[word.word]);
   } else {
     filtered = myWords;
   }
@@ -414,9 +450,9 @@ function applyFilter(type) {
 function getFilteredWords() {
   const myWords = customWords.filter(w => w.userId === userId);
   if (currentFilter === 'learned') {
-    return myWords.filter(word => learnedWords[word.id]);
+    return myWords.filter(word => learnedWords[word.word]);
   } else if (currentFilter === 'unlearned') {
-    return myWords.filter(word => !learnedWords[word.id]);
+    return myWords.filter(word => !learnedWords[word.word]);
   } else {
     return [...myWords];
   }
@@ -428,18 +464,28 @@ function shuffleWords() {
   renderWords(shuffled);
 }
 
+//------------------------------------------
+// 🧠 クイズ機能
+//------------------------------------------
+function toggleQuizMode() {
+  quizMode = quizMode === 'en-to-ja' ? 'ja-to-en' : 'en-to-ja';
+  localStorage.setItem('quizMode', quizMode);
+  document.getElementById('quiz-mode-label').textContent = quizMode === 'en-to-ja' ? '英→日' : '日→英';
+  startQuiz();
+}
+
 function startQuiz() {
   const quizArea = document.getElementById('quiz-area');
   quizArea.innerHTML = '';
 
   const myWords = customWords.filter(w => w.userId === userId); // ← 自分の単語だけ
-  const unlearned = myWords.filter(w => !learnedWords[w.id]);
-  const learned = myWords.filter(w => learnedWords[w.id]);
+  const unlearned = myWords.filter(w => !learnedWords[w.word]);
+  const learned = myWords.filter(w => learnedWords[w.word]);
 
   let pool = [];
 
   if (unlearned.length > 0) {
-    const sortedByStreak = [...learned].sort((a, b) => (correctStreaks[a.id] || 0) - (correctStreaks[b.id] || 0));
+    const sortedByStreak = [...learned].sort((a, b) => (correctStreaks[a.word] || 0) - (correctStreaks[b.word] || 0));
     pool = [...unlearned, ...sortedByStreak.slice(0, 50)]; // 未習得を中心に、習得済みもcorrectStreaksが小さいほうから５０個混ぜる
   } else {
     pool = [...learned];
@@ -448,49 +494,48 @@ function startQuiz() {
   const question = pool[Math.floor(Math.random() * pool.length)];
   currentQuestion = question;
 
-  const distractors = myWords
-    .filter(w => w.id !== question.id)
-    .map(w => w.meaning_jp);
+  const distractors = shuffle(
+    myWords.filter(w => w.word !== question.word)
+      .map(w => quizMode === 'en-to-ja' ? w.meaning_jp : w.word)
+  ).slice(0, 4);
 
-  const randomDistractors = shuffle(distractors).slice(0, 5);
+  const correctAnswer = quizMode === 'en-to-ja' ? question.meaning_jp : question.word;
+  const choices = shuffle([correctAnswer, ...distractors]);
 
-  const choices = shuffle([
-    question.meaning_jp,
-    ...randomDistractors
-  ]);
+  const questionText = quizMode === 'en-to-ja'
+    ? `「${question.word}」の意味は？`
+    : `「${question.meaning_jp}」に対応する英単語は？`;
 
   quizArea.innerHTML = `
-    <h3>「${question.word}」の意味は？<button class="play-btn" title="発音を再生">🔊</button></h3>
-    ${choices.map(c => `<button onclick="checkAnswer('${c}', '${question.meaning_jp}', '${question.id}')">${c}</button>`).join('')}
+    <h3>${questionText}<button class="play-btn" title="発音を再生">🔊</button><button onclick="toggleQuizMode()">切り替え: <span id="quiz-mode-label">${quizMode === 'en-to-ja' ? '英→日' : '日→英'}</span></button></h3>
+    ${choices.map(c => `<button onclick="checkAnswer('${c}', '${correctAnswer}', '${question.word}')">${c}</button>`).join('')}
   `;
 
   const playBtn = quizArea.querySelector('.play-btn');
   if (playBtn) playBtn.addEventListener('click', () => speak(String(question.word)));
 }
 
-function checkAnswer(selected, correct) {
+function checkAnswer(selected, correct, word) {
   const quizArea = document.getElementById('quiz-area');
   quizArea.style.backgroundColor = selected === correct ? '#d4edda' : '#f8d7da';
-
-  const id = currentQuestion.id;
 
   setTimeout(() => {
     quizArea.style.backgroundColor = '';
 
     if (selected === correct) {
-      correctStreaks[id] = (correctStreaks[id] || 0) + 1;
+      correctStreaks[word] = (correctStreaks[word] || 0) + 1;
       localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
 
-      if (correctStreaks[id] >= 3) {
-        learnedWords[id] = true;
+      if (correctStreaks[word] >= 3) {
+        learnedWords[word] = true;
         localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
       }
     } else {
-      correctStreaks[id] = 0;
+      correctStreaks[word] = 0;
       localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
 
-      if (learnedWords[id]) {
-        learnedWords[id] = false;
+      if (learnedWords[word]) {
+        learnedWords[word] = false;
         localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
       }
 
@@ -499,7 +544,7 @@ function checkAnswer(selected, correct) {
 
     // DB とシートに確実に状態を送る（数値化して渡す）
     try {
-      updateLearningStatus(id, !!learnedWords[id], Number(correctStreaks[id] || 0));
+      updateLearningStatus(word, !!learnedWords[word], Number(correctStreaks[word] || 0));
     } catch (e) {
       console.error('updateLearningStatus failed', e);
     }
@@ -589,7 +634,6 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   const meaning = document.getElementById('new-meaning').value.trim();
   const example = document.getElementById('new-example').value.trim();
   const category = document.getElementById('new-category').value.trim();
-  const id = word.toLowerCase().replace(/\s+/g, '-');
 
   if (!word) {
     addButton.disabled = false;
@@ -599,7 +643,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
     return;
   }
 
-  if (customWords.some(w => w.id === id)) {
+  if (customWords.some(w => w.word === word)) {
     const shouldUpdate = confirm('この単語はすでに存在します。\n更新しますか？（キャンセルで中止）');
     if (!shouldUpdate) {
       addButton.disabled = false;
@@ -611,7 +655,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
 
 
     // ✅ 更新処理：IndexedDBとGoogle Sheetsに上書き
-    const updatedWord = { id, word, meaning_jp, meaning, example, category, userId};
+    const updatedWord = {userId, word, meaning_jp, meaning, example, category};
 
     useDB('readwrite', store => store.put(updatedWord));
 
@@ -619,7 +663,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
       method: 'POST',
       body: JSON.stringify(updatedWord)
     }).then(() => {
-      const index = customWords.findIndex(w => w.id === id);
+      const index = customWords.findIndex(w => w.word === word);
       if (index !== -1) customWords[index] = updatedWord;
       renderWords();
       updateProgressBar();
@@ -638,7 +682,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   }
 
 
-  const newWord = { id, word, meaning_jp, meaning, example, category, userId};
+  const newWord = { userId, word, meaning_jp, meaning, example, category };
 
   // IndexedDB に保存
   useDB('readwrite', store => store.put(newWord));
@@ -648,7 +692,6 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
     method: 'POST',
     body: new URLSearchParams({
       action: 'add',
-      id: newWord.id,
       word: newWord.word,
       meaning_jp: newWord.meaning_jp,
       meaning: newWord.meaning,
@@ -747,7 +790,7 @@ document.getElementById('new-word').addEventListener('input', async function () 
 
 async function enrichWordFromDictionary(index) {
   const wordObj = customWords[index];
-  const card = wordObj ? document.querySelector(`.word-card[data-id="${CSS.escape(wordObj.id || '')}"]`) : null;
+  const card = wordObj ? document.querySelector(`.word-card[data-word="${CSS.escape(wordObj.word || '')}"]`) : null;
   let button = card ? card.querySelector('.auto-fill-btn') : null;
   if (button) {
     button.disabled = true;
@@ -810,7 +853,6 @@ async function enrichWordFromDictionary(index) {
     formData.append('meaning', wordObj.meaning);
     formData.append('example', wordObj.example);
     formData.append('category', wordObj.category);
-    formData.append('id', wordObj.id);
     formData.append('userId', wordObj.userId || userId);;
 
     await fetch(`${SHEET_API_URL}?action=update`, {
@@ -830,6 +872,7 @@ async function enrichWordFromDictionary(index) {
     }
   }
 }
+
 
 /*
 CORSを回避できるのはdoGET()とdoPOST()のみだからすべての操作をdoPOST()に統合して、
