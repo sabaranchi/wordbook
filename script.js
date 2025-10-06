@@ -5,25 +5,195 @@ let currentQuestion = null;
 let question = null;
 let quizMode = localStorage.getItem('quizMode') || 'en-to-ja'; // en-to-ja / ja-to-en
 let correctStreaks = JSON.parse(localStorage.getItem('correctStreaks') || '{}');
-let userId = localStorage.getItem('userId');
-if (!userId) {
-  userId = 'user-' + Math.random().toString(36).slice(2);
-  localStorage.setItem('userId', userId);
-}
-document.getElementById('user-id-display').textContent = userId;
-function setManualUserId() {
-  const input = document.getElementById('manual-userid');
-  const word = input.value.trim();
-  if (word) {
-    localStorage.setItem('userId', word);
-    alert('userIdをセットしました: ' + word);
-    location.reload(); // 再読み込みで反映
+// Enforce Google login only: no local/manual userId
+let userId = null;
+
+
+
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbwc8G9IuTwcMIC2k0TqzLDeAdmolDyeyj-goOWdnxOUwCOzGCMpkpVBgOjXQZD7V2DO1g/exec';
+// Google Identity: set your client id here
+const GOOGLE_CLIENT_ID = '631768968773-jakkcpa1ia1qb8rnec2mj4jqp6ohnoc5.apps.googleusercontent.com';
+let currentIdToken = null;
+
+function parseJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
   }
 }
 
+function initGoogleIdentity() {
+  const target = document.getElementById('g_id_button');
+  if (!target) return;
 
+  let attempts = 0;
+  const maxAttempts = 12; // retry for ~12 * 250ms = 3s
+  const tryInit = () => {
+    if (window.google && window.google.accounts && window.google.accounts.id) {
+      try {
+        console.log('initGoogleIdentity: google.accounts.id available, initializing');
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleCredentialResponse,
+          auto_select: false
+        });
+        console.log('initGoogleIdentity: initialize succeeded, rendering button');
+        window.google.accounts.id.renderButton(target, { theme: 'outline', size: 'large' });
+        console.log('initGoogleIdentity: renderButton called');
+      } catch (e) {
+        console.warn('initGoogleIdentity: initialize/render failed', e);
+      }
+      return;
+    }
+    attempts++;
+    if (attempts < maxAttempts) {
+      setTimeout(tryInit, 250);
+    } else {
+      console.warn('Google Identity client did not load; sign-in button not rendered.');
+    }
+  };
+  tryInit();
+}
 
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbximFpa3J21ua8wAN4MmvYWANYcEbDjZMNm4YTuPK0ksKiFWFF3nK1M43J8bclwKo_9Uw/exec';
+function handleCredentialResponse(resp) {
+  if (!resp || !resp.credential) return;
+  currentIdToken = resp.credential;
+  // persist current id_token for page reloads (sessionStorage used for lifecycle)
+  try { sessionStorage.setItem('id_token', currentIdToken); } catch (e) { /* ignore */ }
+  const payload = parseJwt(currentIdToken);
+  if (payload && payload.sub) {
+    // for UI, set userId and update compact user icon (title contains email)
+    userId = payload.email || payload.sub;
+    const userIcon = document.getElementById('user-icon');
+    if (userIcon) {
+      const displayText = payload.email || payload.sub || '未ログイン';
+      userIcon.title = displayText;
+      // show initial letter if email present
+      const initial = (payload.email || payload.sub || '').charAt(0).toUpperCase();
+      userIcon.textContent = initial || '👤';
+      userIcon.setAttribute('aria-hidden', 'false');
+    }
+    // show signout button
+    const so = document.getElementById('signout-btn'); if (so) so.style.display = 'inline-block';
+
+    // After login, fetch the user's rows from the sheet (server will filter by id_token)
+    callSheetApi('list').then(data => {
+      if (!Array.isArray(data)) data = [];
+      customWords = data.map((word, i) => ({ ...word, rowIndex: i }));
+
+      // Rebuild learnedWords and correctStreaks from server data
+      learnedWords = {};
+      correctStreaks = {};
+      customWords.forEach(word => {
+        learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
+        correctStreaks[word.word] = Number(word.streak) || 0;
+      });
+      localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+      localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+
+      // cache in IndexedDB
+      useDB('readwrite', store => {
+        store.clear();
+        customWords.forEach(w => store.put(w));
+      });
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('word-container').style.display = 'block';
+      renderWords();
+    }).catch(err => {
+      console.error('failed to load sheet data after login', err);
+      alert('データの取得に失敗しました。コンソールを確認してください。');
+    });
+  }
+}
+
+// Restore id_token from sessionStorage on page load to avoid being logged out on reload
+function restoreSessionFromStorage() {
+  try {
+    const token = sessionStorage.getItem('id_token');
+    if (!token) return false;
+    currentIdToken = token;
+    const payload = parseJwt(currentIdToken);
+    if (!payload) return false;
+    userId = payload.email || payload.sub;
+    const userIcon = document.getElementById('user-icon');
+    if (userIcon) {
+      const displayText = userId || '未ログイン';
+      userIcon.title = displayText;
+      const initial = (userId || '').charAt(0).toUpperCase();
+      userIcon.textContent = initial || '👤';
+      userIcon.setAttribute('aria-hidden', 'false');
+    }
+    const so = document.getElementById('signout-btn'); if (so) so.style.display = 'inline-block';
+
+    // load user rows
+    callSheetApi('list').then(data => {
+      if (!Array.isArray(data)) data = [];
+      customWords = data.map((word, i) => ({ ...word, rowIndex: i }));
+      // rebuild learned state
+      learnedWords = {};
+      correctStreaks = {};
+      customWords.forEach(word => {
+        learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
+        correctStreaks[word.word] = Number(word.streak) || 0;
+      });
+      localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+      localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+      useDB('readwrite', store => { store.clear(); customWords.forEach(w => store.put(w)); });
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('word-container').style.display = 'block';
+      renderWords();
+    }).catch(e => {
+      console.error('restore list failed', e);
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('word-container').style.display = 'block';
+    });
+
+    return true;
+  } catch (e) { return false; }
+}
+
+// Central helper to call the Apps Script endpoint. It attaches id_token when available.
+async function callSheetApi(action, params = {}) {
+  try {
+    const body = new URLSearchParams();
+    body.append('action', action);
+    Object.keys(params || {}).forEach(k => {
+      const v = params[k];
+      if (v === undefined || v === null) return;
+      body.append(k, String(v));
+    });
+    if (currentIdToken) body.append('id_token', currentIdToken);
+
+    const res = await fetch(SHEET_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      console.error('callSheetApi HTTP error', res.status, text);
+      // still try to parse JSON
+      try { return JSON.parse(text); } catch (e) { return text; }
+    }
+    try { return JSON.parse(text); } catch (e) { return text; }
+  } catch (e) {
+    console.error('callSheetApi failed', e);
+    throw e;
+  }
+}
+
+async function callSheetGet() {
+  const res = await fetch(SHEET_API_URL);
+  return res.json();
+}
 
 function useDB(mode, callback) {
   return new Promise((resolve, reject) => {
@@ -45,42 +215,49 @@ function useDB(mode, callback) {
 
 window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('loading').style.display = 'block';
+  // initialize Google Identity button if available
+  console.log('init: attempting to initialize Google Identity');
+  const gbtn = document.getElementById('g_id_button');
+  console.log('init: g_id_button element', !!gbtn);
+  initGoogleIdentity();
 
-  useDB('readonly', store => {
-    store.getAll().onsuccess = e => {
-      const localWords = e.target.result;
-      if (localWords.length > 0) {
-        customWords = localWords;
+  // Try to restore session (id_token) from sessionStorage to avoid logout on reload
+  const restored = restoreSessionFromStorage();
+  if (!restored) {
+    // Not restored: show login UI (don't fetch user list until login)
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('word-container').style.display = 'none';
+  }
+
+  // sign-out button behaviour: attach handler regardless of restore state
+  const signoutBtn = document.getElementById('signout-btn');
+  if (signoutBtn) {
+    signoutBtn.addEventListener('click', async () => {
+      // Prefer disabling auto select to avoid FedCM/revoke cross-origin postMessage issues
+      try {
+        if (window.google && window.google.accounts && window.google.accounts.id && window.google.accounts.id.disableAutoSelect) {
+          try { window.google.accounts.id.disableAutoSelect(); } catch (e) { console.warn('disableAutoSelect failed', e); }
+        }
+        // Note: window.google.accounts.id.revoke may cause FedCM disconnect/postMessage errors in some environments
+        // so we avoid calling revoke here to prevent noisy errors. If you need full server-side revocation, call
+        // the Google token revocation endpoint from your backend instead.
+      } catch (e) {
+        console.warn('signout helper failed', e);
       }
 
-      fetch(SHEET_API_URL)
-        .then(res => res.json())
-        .then(data => {
-          customWords = data.map((word, i) => ({
-            ...word,
-            rowIndex: i
-          }));
-
-          // ✅ ここで learnedWords と correctStreaks を再構築
-          learnedWords = {};
-          correctStreaks = {};
-          data.forEach(word => {
-            learnedWords[word.word] = word.learned === true || word.learned === 'TRUE';
-            correctStreaks[word.word] = Number(word.streak) || 0;
-          });
-          localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
-          localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
-
-          useDB('readwrite', store => {
-            store.clear();
-            customWords.forEach(word => store.put(word));
-          });
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('word-container').style.display = 'block';
-          renderWords();
-        });
-    };
-  });
+      // Clear client-side session regardless of the above
+      currentIdToken = null;
+      try { sessionStorage.removeItem('id_token'); } catch (e) {}
+      userId = null;
+  const userIcon = document.getElementById('user-icon');
+  if (userIcon) { userIcon.title = '未ログイン'; userIcon.textContent = '👤'; }
+      signoutBtn.style.display = 'none';
+      // clear local words view
+      customWords = [];
+      const wc = document.getElementById('word-container');
+      if (wc) { wc.innerHTML = ''; wc.style.display = 'none'; }
+    });
+  }
 });
 
 //------------------------------------------
@@ -157,18 +334,9 @@ async function addWord(wordObj) {
     });
   });
 
-  await fetch(`${SHEET_API_URL}?action=add`, {
-    method: 'POST',
-    body: new URLSearchParams({
-      action: 'add',
-      word: wordObj.word,
-      meaning_jp: wordObj.meaning_jp,
-      meaning: wordObj.meaning,
-      example: wordObj.example,
-      category: wordObj.category,
-      userId: userId
-    })
-  });
+  await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp, meaning: wordObj.meaning, example: wordObj.example, category: wordObj.category, userId });
+  // prefer using callSheetApi for consistent id_token forwarding
+  // await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp, meaning: wordObj.meaning, example: wordObj.example, category: wordObj.category, userId });
 
   // 画面に新規カードだけ追加してちらつきを抑える
   const container = document.getElementById('word-container');
@@ -194,18 +362,8 @@ async function editWord(index, field, value) {
   });
 
 
-  await fetch(`${SHEET_API_URL}?action=update`, {
-    method: 'POST',
-    body: new URLSearchParams({
-      action: 'update',
-      word: word.word,
-      meaning_jp: word.meaning_jp,
-      meaning: word.meaning,
-      example: word.example,
-      category: word.category,
-      userId: word.userId
-    })
-  });
+  await callSheetApi('update', { word: word.word, meaning_jp: word.meaning_jp, meaning: word.meaning, example: word.example, category: word.category, userId: word.userId });
+  // alternatively: await callSheetApi('update', { word: word.word, meaning_jp: word.meaning_jp, meaning: word.meaning, example: word.example, category: word.category, userId: word.userId });
 
   // 全体再描画の代わりに該当カードを差分更新
   try { updateCardDOM(word); } catch (e) { console.error(e); }
@@ -231,19 +389,11 @@ async function updateLearningStatus(word, learned, streak) {
   });
 
   try {
-    await fetch(`${SHEET_API_URL}?action=update`, {
-      method: 'POST',
-      body: new URLSearchParams({
-        action: 'update',
-        word: word2.word,
-        learned: word2.learned,
-        streak: word2.streak,
-        userId: word2.userId
-      })
-    });
+    await callSheetApi('update', { word: word2.word, learned: word2.learned, streak: word2.streak, userId: word2.userId });
   } catch (e) {
     console.error('Sheets update failed', e);
   }
+  // consider using: await callSheetApi('update', { word: word2.word, learned: word2.learned, streak: word2.streak, userId: word2.userId });
 }
 
 function deleteWord(index) {
@@ -254,11 +404,8 @@ function deleteWord(index) {
   if (!confirm('この単語を削除しますか？')) return;
   customWords.splice(index, 1);
   useDB('readwrite', store => store.delete(id));
-  fetch(`${SHEET_API_URL}?action=delete&id=${id}`, {
-    method: 'POST',
-    body: JSON.stringify({ id, userId }),
-    mode: 'no-cors'
-  });
+  callSheetApi('delete', { id, userId }).catch(e => console.warn('delete to Sheets failed', e));
+  // Better: callSheetApi('delete', { id, userId }).catch(e => console.warn('delete to Sheets failed', e));
 
   // DOMから該当カードを削除（全再描画しない）
   const container = document.getElementById('word-container');
@@ -487,7 +634,7 @@ function startQuiz() {
 
   if (unlearned.length > 0) {
     const sortedByStreak = [...learned].sort((a, b) => (correctStreaks[a.word] || 0) - (correctStreaks[b.word] || 0));
-    pool = [...unlearned, ...sortedByStreak.slice(0, 50)]; // 未習得を中心に、習得済みもcorrectStreaksが小さいほうから５０個混ぜる
+    pool = [...unlearned, ...sortedByStreak.slice(0, 100)]; // 未習得を中心に、習得済みもcorrectStreaksが小さいほうから100個混ぜる
   } else {
     pool = [...learned];
   }
@@ -660,10 +807,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
 
     useDB('readwrite', store => store.put(updatedWord));
 
-    fetch(SHEET_API_URL + '?action=update', {
-      method: 'POST',
-      body: JSON.stringify(updatedWord)
-    }).then(() => {
+    callSheetApi('update', updatedWord).then(() => {
       const index = customWords.findIndex(w => w.word === word);
       if (index !== -1) customWords[index] = updatedWord;
       renderWords();
@@ -685,22 +829,20 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
 
   const newWord = { userId, word, meaning_jp, meaning, example, category };
 
+  if (!userId) {
+    alert('先に Google でログインしてください。');
+    addButton.disabled = false;
+    addButton.textContent = '追加';
+    addButton.style.opacity = '1';
+    addButton.style.cursor = 'pointer';
+    return;
+  }
+
   // IndexedDB に保存
   useDB('readwrite', store => store.put(newWord));
 
   // Google Sheets に送信
-  fetch(SHEET_API_URL, {
-    method: 'POST',
-    body: new URLSearchParams({
-      action: 'add',
-      word: newWord.word,
-      meaning_jp: newWord.meaning_jp,
-      meaning: newWord.meaning,
-      example: newWord.example,
-      category: newWord.category,
-      userId: newWord.userId
-    })
-  }).then(() => {
+  callSheetApi('add', { word: newWord.word, meaning_jp: newWord.meaning_jp, meaning: newWord.meaning, example: newWord.example, category: newWord.category, userId: newWord.userId }).then(() => {
     customWords.push(newWord);
     renderWords();
     updateProgressBar();
@@ -848,19 +990,53 @@ async function enrichWordFromDictionary(index) {
       });
     });
 
-    const formData = new URLSearchParams();
-    formData.append('action', 'update');
-    formData.append('word', wordObj.word);
-    formData.append('meaning', wordObj.meaning);
-    formData.append('example', wordObj.example);
-    formData.append('category', wordObj.category);
-    formData.append('userId', wordObj.userId || userId);;
+    // Send update to server (centralized helper adds id_token)
+    try {
+      console.log('calling callSheetApi update for', wordObj.word);
+      const resp = await callSheetApi('update', {
+        word: wordObj.word,
+        meaning: wordObj.meaning,
+        example: wordObj.example,
+        category: wordObj.category,
+        userId: wordObj.userId || userId
+      });
+      console.log('callSheetApi update response:', resp);
+      // Determine success in several server response styles
+      let updated = false;
+      if (resp && typeof resp === 'object' && resp.success) updated = true;
+      if (typeof resp === 'string' && /updated|added|ok|success/i.test(resp)) updated = true;
 
-    await fetch(`${SHEET_API_URL}?action=update`, {
-      method: 'POST',
-      body: formData,
-    });
-    updateCardDOM(wordObj);
+      if (updated) {
+        const idx = customWords.findIndex(w => w.word === wordObj.word && (w.userId === (wordObj.userId || userId)));
+        if (idx !== -1) customWords[idx] = wordObj; else customWords.push(wordObj);
+        updateCardDOM(wordObj);
+      } else {
+        console.warn('Update did not report success; attempting to add instead', resp);
+        // ensure userId is set so add will attribute correctly
+        wordObj.userId = wordObj.userId || userId;
+        const addResp = await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp || '', meaning: wordObj.meaning || '', example: wordObj.example || '', category: wordObj.category || '', userId: wordObj.userId });
+        console.log('callSheetApi add response:', addResp);
+        let added = false;
+        if (addResp && typeof addResp === 'object' && addResp.success) added = true;
+        if (typeof addResp === 'string' && /added|ok|success/i.test(addResp)) added = true;
+        if (added) {
+          // reflect in UI
+          const idx2 = customWords.findIndex(w => w.word === wordObj.word && w.userId === wordObj.userId);
+          if (idx2 === -1) customWords.push(wordObj);
+          updateCardDOM(wordObj);
+          if (button) {
+            button.textContent = '保存しました';
+            setTimeout(() => { if (button) button.textContent = '自動入力'; }, 1500);
+          }
+        } else {
+          console.error('Neither update nor add succeeded', resp, addResp);
+          alert('シートへの反映に失敗しました（詳細はコンソール）。');
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update sheet via callSheetApi', e);
+      throw e;
+    }
   } catch (err) {
     console.error('辞書情報の取得に失敗しました', err);
     alert('辞書情報の取得に失敗しました。ネットワークや単語を確認してください。');
@@ -873,21 +1049,3 @@ async function enrichWordFromDictionary(index) {
     }
   }
 }
-
-
-/*
-CORSを回避できるのはdoGET()とdoPOST()のみだからすべての操作をdoPOST()に統合して、
-function editWord(index, field, value) {
-  const word = customWords[index];
-  word[field] = value.trim();
-  useDB('readwrite', store => store.put(word));
-  fetch(`${SHEET_API_URL}?action=update`, {
-    method: 'POST',
-    body: JSON.stringify(word),
-    mode: 'no-cors'
-  });
-  renderWords();
-}
-のようにmode: 'no-cors'を指定する
-
-javascript:localStorage.setItem('userId','user-0')*/

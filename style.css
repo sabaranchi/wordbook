@@ -5,7 +5,53 @@ body {
 }
 
 h1 {
-  text-align: center;
+  text-align: left;
+  margin: 0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.header-left h1 {
+  font-size: 1.6rem;
+}
+
+.user-area {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+
+.user-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  font-size: 18px;
+}
+
+.signout {
+  background: transparent;
+  color: #007bff;
+  border: 1px solid #007bff;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.signout:hover {
+  background: #007bff;
+  color: #fff;
 }
 
 .word-header {
