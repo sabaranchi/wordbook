@@ -10,7 +10,7 @@ let userId = null;
 
 
 
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbwc8G9IuTwcMIC2k0TqzLDeAdmolDyeyj-goOWdnxOUwCOzGCMpkpVBgOjXQZD7V2DO1g/exec';
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbym0i5TUDxhtuhABkjiNhSo9ZOv2g1ds8ljUIx6r5jVFk1KF7pUs4kJ0bFMuu_5qGaPRw/exec';
 // Google Identity: set your client id here
 const GOOGLE_CLIENT_ID = '631768968773-jakkcpa1ia1qb8rnec2mj4jqp6ohnoc5.apps.googleusercontent.com';
 let currentIdToken = null;
@@ -97,9 +97,9 @@ function handleCredentialResponse(resp) {
       localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
       localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
 
-      // cache in IndexedDB
+      // cache in IndexedDB (bulk). Guard each put so a single bad row won't break the whole flow.
       useDB('readwrite', store => {
-        store.clear();
+        try { store.clear(); } catch (e) { /* ignore */ }
         customWords.forEach(w => {
           if (!w || !w.word) {
             console.warn('Skipping IndexedDB put for item without word key', w);
@@ -151,7 +151,16 @@ function restoreSessionFromStorage() {
       });
       localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
       localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
-  useDB('readwrite', store => { store.clear(); customWords.forEach(w => { if (!w || !w.word) { console.warn('Skipping IndexedDB put for item without word key', w); } else { store.put(w); } }); });
+      useDB('readwrite', store => {
+        try { store.clear(); } catch (e) {}
+        customWords.forEach(w => {
+          if (!w || !w.word) {
+            console.warn('Skipping IndexedDB put for item without word key', w);
+          } else {
+            store.put(w);
+          }
+        });
+      });
       document.getElementById('loading').style.display = 'none';
       document.getElementById('word-container').style.display = 'block';
       renderWords();
@@ -830,7 +839,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
       if (!updatedWord || !updatedWord.word) {
         console.warn('Skipping IndexedDB put for updatedWord without word key', updatedWord);
       } else {
-        store.put(updatedWord);
+        try { store.put(updatedWord); } catch (e) { console.warn('IndexedDB put failed for updatedWord', e, updatedWord); }
       }
     });
 
@@ -870,7 +879,7 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
     if (!newWord || !newWord.word) {
       console.warn('Skipping IndexedDB put for newWord without word key', newWord);
     } else {
-      store.put(newWord);
+      try { store.put(newWord); } catch (e) { console.warn('IndexedDB put failed for newWord', e, newWord); }
     }
   });
 
