@@ -76,7 +76,7 @@ function handleCredentialResponse(resp) {
       userIcon.title = displayText;
       // show initial letter if email present
       const initial = (payload.email || payload.sub || '').charAt(0).toUpperCase();
-      userIcon.textContent = initial || '👤';
+      if (typeof userIcon.textContent !== 'undefined') userIcon.textContent = initial || '👤';
       userIcon.setAttribute('aria-hidden', 'false');
     }
     // show signout button
@@ -127,7 +127,7 @@ function restoreSessionFromStorage() {
       const displayText = userId || '未ログイン';
       userIcon.title = displayText;
       const initial = (userId || '').charAt(0).toUpperCase();
-      userIcon.textContent = initial || '👤';
+      if (typeof userIcon.textContent !== 'undefined') userIcon.textContent = initial || '👤';
       userIcon.setAttribute('aria-hidden', 'false');
     }
     const so = document.getElementById('signout-btn'); if (so) so.style.display = 'inline-block';
@@ -250,7 +250,7 @@ window.addEventListener('DOMContentLoaded', () => {
       try { sessionStorage.removeItem('id_token'); } catch (e) {}
       userId = null;
   const userIcon = document.getElementById('user-icon');
-  if (userIcon) { userIcon.title = '未ログイン'; userIcon.textContent = '👤'; }
+  if (userIcon) { userIcon.title = '未ログイン'; if (typeof userIcon.textContent !== 'undefined') userIcon.textContent = '👤'; }
       signoutBtn.style.display = 'none';
       // clear local words view
       customWords = [];
@@ -434,7 +434,8 @@ function updateProgressBar() {
   const learnedCount = validIds.filter(word => learnedWords[word]).length;
   const percent = total === 0 ? 0 : Math.round((learnedCount / total) * 100);
 
-  document.getElementById('progress-text').textContent = `${percent}%`;
+  const progressTextEl = document.getElementById('progress-text');
+  if (progressTextEl) progressTextEl.textContent = `${percent}%`;
   const fill = document.getElementById('progress-fill');
   fill.style.width = `${percent}%`;
   fill.style.backgroundColor = percent < 40 ? 'red' : percent < 80 ? 'orange' : 'green';
@@ -618,7 +619,8 @@ function shuffleWords() {
 function toggleQuizMode() {
   quizMode = quizMode === 'en-to-ja' ? 'ja-to-en' : 'en-to-ja';
   localStorage.setItem('quizMode', quizMode);
-  document.getElementById('quiz-mode-label').textContent = quizMode === 'en-to-ja' ? '英→日' : '日→英';
+  const quizModeLabelEl = document.getElementById('quiz-mode-label');
+  if (quizModeLabelEl) quizModeLabelEl.textContent = quizMode === 'en-to-ja' ? '英→日' : '日→英';
   startQuiz();
 }
 
