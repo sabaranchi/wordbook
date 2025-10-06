@@ -235,8 +235,23 @@ function useDB(mode, callback) {
               console.warn('useDB.safeStore: skipping put - empty word value', obj);
               return;
             }
-            obj.word = w; // normalize
-            return store.put(obj);
+            // Create a plain shallow copy to avoid prototype/immutable-object issues that
+            // can cause IndexedDB to fail evaluating the keyPath on some platforms.
+            const plain = Object.assign({}, obj);
+            plain.word = w; // ensure own, trimmed property
+            try {
+              return store.put(plain);
+            } catch (innerErr) {
+              // Detailed debug: log types and keys to help track down why keyPath evaluation fails
+              console.warn('useDB.safeStore: put threw, details:', innerErr, {
+                original: obj,
+                plainCopy: plain,
+                wordType: typeof plain.word,
+                wordValue: plain.word,
+                keys: Object.keys(plain)
+              });
+              throw innerErr;
+            }
           } catch (e) {
             console.warn('useDB.safeStore: put failed', e, obj);
             return;
