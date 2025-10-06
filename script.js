@@ -100,7 +100,13 @@ function handleCredentialResponse(resp) {
       // cache in IndexedDB
       useDB('readwrite', store => {
         store.clear();
-        customWords.forEach(w => store.put(w));
+        customWords.forEach(w => {
+          if (!w || !w.word) {
+            console.warn('Skipping IndexedDB put for item without word key', w);
+          } else {
+            store.put(w);
+          }
+        });
       });
 
       document.getElementById('loading').style.display = 'none';
@@ -145,7 +151,7 @@ function restoreSessionFromStorage() {
       });
       localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
       localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
-      useDB('readwrite', store => { store.clear(); customWords.forEach(w => store.put(w)); });
+  useDB('readwrite', store => { store.clear(); customWords.forEach(w => { if (!w || !w.word) { console.warn('Skipping IndexedDB put for item without word key', w); } else { store.put(w); } }); });
       document.getElementById('loading').style.display = 'none';
       document.getElementById('word-container').style.display = 'block';
       renderWords();
@@ -329,7 +335,11 @@ function updateCardDOM(word) {
 async function addWord(wordObj) {
   await new Promise(resolve => {
     useDB('readwrite', store => {
-      store.put(wordObj);
+      if (!wordObj || !wordObj.word) {
+        console.warn('Skipping IndexedDB put: item missing word key', wordObj);
+      } else {
+        store.put(wordObj);
+      }
       resolve();
     });
   });
@@ -356,7 +366,11 @@ async function editWord(index, field, value) {
 
   await new Promise((resolve) => {
     useDB('readwrite', store => {
-      store.put(word);
+      if (!word || !word.word) {
+        console.warn('Skipping IndexedDB put: item missing word key', word);
+      } else {
+        store.put(word);
+      }
       resolve(); // ✅ IndexedDB 保存完了
     });
   });
@@ -383,7 +397,12 @@ async function updateLearningStatus(word, learned, streak) {
 
   await new Promise(resolve => {
     useDB('readwrite', store => {
-      store.put(word2);
+      // Ensure the object has the keyPath 'word' before putting to IndexedDB
+      if (!word2 || !word2.word) {
+        console.warn('Skipping IndexedDB put: item missing word key', word2);
+      } else {
+        store.put(word2);
+      }
       resolve();
     });
   });
