@@ -10,7 +10,7 @@ let userId = null;
 
 
 
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbym0i5TUDxhtuhABkjiNhSo9ZOv2g1ds8ljUIx6r5jVFk1KF7pUs4kJ0bFMuu_5qGaPRw/exec';
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbyklRlBAcskA9qVdOZrELFod-OxWx6llc3GKylrdCm9l7fxsdgm13-U_hFfhHUvZWA1mw/exec';
 // Google Identity: set your client id here
 const GOOGLE_CLIENT_ID = '631768968773-jakkcpa1ia1qb8rnec2mj4jqp6ohnoc5.apps.googleusercontent.com';
 let currentIdToken = null;
@@ -82,39 +82,64 @@ function handleCredentialResponse(resp) {
     // show signout button
     const so = document.getElementById('signout-btn'); if (so) so.style.display = 'inline-block';
 
-    // After login, fetch the user's rows from the sheet (server will filter by id_token)
-    callSheetApi('list').then(data => {
-      if (!Array.isArray(data)) data = [];
-      customWords = data.map((word, i) => ({ ...word, rowIndex: i }));
-
-      // Rebuild learnedWords and correctStreaks from server data
-      learnedWords = {};
-      correctStreaks = {};
-      customWords.forEach(word => {
-        learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
-        correctStreaks[word.word] = Number(word.streak) || 0;
-      });
-      localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
-      localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
-
-      // cache in IndexedDB (bulk). Guard each put so a single bad row won't break the whole flow.
-      useDB('readwrite', store => {
-        try { store.clear(); } catch (e) { /* ignore */ }
-        customWords.forEach(w => {
-          if (!w || !w.word) {
-            console.warn('Skipping IndexedDB put for item without word key', w);
-          } else {
-            store.put(w);
-          }
+    // Hybrid flow: first render local cache (fast), then fetch server list in background and sync
+    readLocalAll().then(localRows => {
+      if (Array.isArray(localRows) && localRows.length > 0) {
+        customWords = localRows.map((w, i) => ({ ...w, rowIndex: i }));
+        // rebuild state from local
+        learnedWords = {};
+        correctStreaks = {};
+        customWords.forEach(word => {
+          learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
+          correctStreaks[word.word] = Number(word.streak) || 0;
         });
-      });
+        localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+        localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('word-container').style.display = 'block';
+        renderWords();
+      }
 
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('word-container').style.display = 'block';
-      renderWords();
+      // now fetch server data and reconcile
+      callSheetApi('list').then(serverData => {
+        if (!Array.isArray(serverData)) serverData = [];
+        // normalize and write to indexedDB
+        useDB('readwrite', store => {
+          try { store.clear(); } catch (e) { /* ignore */ }
+          serverData.forEach((w, i) => {
+            if (!w || !w.word) {
+              console.warn('Skipping server row without word key', w);
+            } else {
+              store.put(w);
+            }
+          });
+        }).then(() => {
+          customWords = serverData.map((word, i) => ({ ...word, rowIndex: i }));
+          // rebuild learnedWords and correctStreaks from server
+          learnedWords = {};
+          correctStreaks = {};
+          customWords.forEach(word => {
+            learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
+            correctStreaks[word.word] = Number(word.streak) || 0;
+          });
+          localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+          localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+          renderWords();
+        }).catch(e => console.warn('Failed to write server rows to IndexedDB', e));
+      }).catch(err => {
+        console.warn('Background fetch of server list failed', err);
+      });
     }).catch(err => {
-      console.error('failed to load sheet data after login', err);
-      alert('データの取得に失敗しました。コンソールを確認してください。');
+      console.warn('readLocalAll failed', err);
+      // fallback: still try server fetch
+      callSheetApi('list').then(serverData => {
+        if (!Array.isArray(serverData)) serverData = [];
+        customWords = serverData.map((word, i) => ({ ...word, rowIndex: i }));
+        renderWords();
+      }).catch(e => {
+        console.error('failed to load sheet data after login', e);
+        alert('データの取得に失敗しました。コンソールを確認してください。');
+      });
     });
   }
 }
@@ -139,36 +164,58 @@ function restoreSessionFromStorage() {
     const so = document.getElementById('signout-btn'); if (so) so.style.display = 'inline-block';
 
     // load user rows
-    callSheetApi('list').then(data => {
-      if (!Array.isArray(data)) data = [];
-      customWords = data.map((word, i) => ({ ...word, rowIndex: i }));
-      // rebuild learned state
-      learnedWords = {};
-      correctStreaks = {};
-      customWords.forEach(word => {
-        learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
-        correctStreaks[word.word] = Number(word.streak) || 0;
-      });
-      localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
-      localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
-      useDB('readwrite', store => {
-        try { store.clear(); } catch (e) {}
-        customWords.forEach(w => {
-          if (!w || !w.word) {
-            console.warn('Skipping IndexedDB put for item without word key', w);
-          } else {
-            store.put(w);
-          }
+      // Hybrid: render local first, then background fetch server and sync
+      readLocalAll().then(localRows => {
+        if (Array.isArray(localRows) && localRows.length > 0) {
+          customWords = localRows.map((w, i) => ({ ...w, rowIndex: i }));
+          learnedWords = {};
+          correctStreaks = {};
+          customWords.forEach(word => {
+            learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
+            correctStreaks[word.word] = Number(word.streak) || 0;
+          });
+          localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+          localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('word-container').style.display = 'block';
+          renderWords();
+        }
+
+        callSheetApi('list').then(serverData => {
+          if (!Array.isArray(serverData)) serverData = [];
+          useDB('readwrite', store => {
+            try { store.clear(); } catch (e) {}
+            serverData.forEach(w => {
+              if (!w || !w.word) { console.warn('Skipping server row without word key', w); } else { store.put(w); }
+            });
+          }).then(() => {
+            customWords = serverData.map((word, i) => ({ ...word, rowIndex: i }));
+            learnedWords = {};
+            correctStreaks = {};
+            customWords.forEach(word => {
+              learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
+              correctStreaks[word.word] = Number(word.streak) || 0;
+            });
+            localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+            localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+            renderWords();
+          }).catch(e => console.warn('Failed to write server rows to IndexedDB', e));
+        }).catch(e => {
+          console.warn('restore list fetch failed', e);
+        });
+      }).catch(e => {
+        console.warn('readLocalAll failed during restore', e);
+        // fallback to server-only
+        callSheetApi('list').then(serverData => {
+          if (!Array.isArray(serverData)) serverData = [];
+          customWords = serverData.map((word, i) => ({ ...word, rowIndex: i }));
+          renderWords();
+        }).catch(err => {
+          console.error('restore list failed', err);
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('word-container').style.display = 'block';
         });
       });
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('word-container').style.display = 'block';
-      renderWords();
-    }).catch(e => {
-      console.error('restore list failed', e);
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('word-container').style.display = 'block';
-    });
 
     return true;
   } catch (e) { return false; }
@@ -213,13 +260,42 @@ async function callSheetGet() {
 function useDB(mode, callback) {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('WordDB', 1);
-    request.onupgradeneeded = e => {
-      e.target.result.createObjectStore('words', { keyPath: 'word' });
-    };
-    request.onsuccess = e => {
-      const db = e.target.result;
-      const tx = db.transaction('words', mode);
-      const store = tx.objectStore('words');
+      request.onupgradeneeded = e => {
+        e.target.result.createObjectStore('words', { keyPath: 'word' });
+      };
+      request.onsuccess = e => {
+        const db = e.target.result;
+
+        // Defensive: ensure existing object store has expected keyPath. If not,
+        // delete the DB and recreate it to align schema (prevents keyPath DataError).
+        try {
+          if (db.objectStoreNames && db.objectStoreNames.contains && db.objectStoreNames.contains('words')) {
+            const checkTx = db.transaction('words', 'readonly');
+            const checkStore = checkTx.objectStore('words');
+            const existingKeyPath = checkStore.keyPath;
+            if (existingKeyPath !== 'word') {
+              console.warn('IndexedDB schema mismatch: existing keyPath=', existingKeyPath, "; recreating DB.");
+              db.close();
+              const delReq = indexedDB.deleteDatabase('WordDB');
+              delReq.onsuccess = () => {
+                // small delay then reopen
+                setTimeout(() => {
+                  useDB(mode, callback).then(resolve).catch(reject);
+                }, 50);
+              };
+              delReq.onerror = () => {
+                reject(new Error('failed_delete_legacy_db'));
+              };
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('useDB schema check failed', err);
+          // fallthrough and try to continue
+        }
+
+        const tx = db.transaction('words', mode);
+        const store = tx.objectStore('words');
 
       // Create a safe wrapper around the store that validates keyPath before put
       const safeStore = {
@@ -271,6 +347,31 @@ function useDB(mode, callback) {
       tx.onerror = reject;
     };
     request.onerror = reject;
+  });
+}
+
+/**
+ * Read all rows from local IndexedDB 'words' store and return as array.
+ */
+function readLocalAll() {
+  return new Promise((resolve, reject) => {
+    try {
+      useDB('readonly', store => {
+        const req = store.openCursor();
+        const out = [];
+        req.onsuccess = function (e) {
+          const cursor = e.target.result;
+          if (cursor) {
+            // shallow copy to detach from cursor
+            out.push(Object.assign({}, cursor.value));
+            cursor.continue();
+          } else {
+            resolve(out);
+          }
+        };
+        req.onerror = function (err) { reject(err); };
+      }).catch(reject);
+    } catch (e) { reject(e); }
   });
 }
 
