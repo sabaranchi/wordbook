@@ -18,13 +18,30 @@ h1 {
 }
 
 .header-left h1 {
-  font-size: 1.4rem;
+  font-size: 1.6rem;
 }
 
 .user-area {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+}
+
+/* Make the Google Sign-In button container narrower so the displayed button appears shorter. */
+#g_id_button {
+  width: 140px; /* desired visible width */
+  height: 40px; /* match typical button height */
+  overflow: hidden;
+  display: inline-block;
+}
+
+/* The Google button renders inside an iframe; scale it down slightly to fit narrower container.
+   We target the iframe using a descendant selector; note this is best-effort because iframe contents
+   are cross-origin. Scaling the iframe element itself reduces visible size. */
+#g_id_button iframe {
+  transform-origin: left center;
+  transform: scale(0.85);
+  height: 48px; /* keep native height so scale looks correct */
 }
 
 
