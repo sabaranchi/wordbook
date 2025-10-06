@@ -826,7 +826,13 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
     // ✅ 更新処理：IndexedDBとGoogle Sheetsに上書き
     const updatedWord = {userId, word, meaning_jp, meaning, example, category};
 
-    useDB('readwrite', store => store.put(updatedWord));
+    useDB('readwrite', store => {
+      if (!updatedWord || !updatedWord.word) {
+        console.warn('Skipping IndexedDB put for updatedWord without word key', updatedWord);
+      } else {
+        store.put(updatedWord);
+      }
+    });
 
     callSheetApi('update', updatedWord).then(() => {
       const index = customWords.findIndex(w => w.word === word);
@@ -860,7 +866,13 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
   }
 
   // IndexedDB に保存
-  useDB('readwrite', store => store.put(newWord));
+  useDB('readwrite', store => {
+    if (!newWord || !newWord.word) {
+      console.warn('Skipping IndexedDB put for newWord without word key', newWord);
+    } else {
+      store.put(newWord);
+    }
+  });
 
   // Google Sheets に送信
   callSheetApi('add', { word: newWord.word, meaning_jp: newWord.meaning_jp, meaning: newWord.meaning, example: newWord.example, category: newWord.category, userId: newWord.userId }).then(() => {
@@ -1006,8 +1018,12 @@ async function enrichWordFromDictionary(index) {
 
     await new Promise((resolve, reject) => {
       useDB('readwrite', store => {
-        store.put(wordObj);
-        resolve(); // ✅ 保存完了
+        if (!wordObj || !wordObj.word) {
+          console.warn('Skipping IndexedDB put during enrich: missing word key', wordObj);
+        } else {
+          store.put(wordObj);
+        }
+        resolve(); // ✅ 保存完了 or skipped
       });
     });
 
