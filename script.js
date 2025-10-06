@@ -220,7 +220,38 @@ function useDB(mode, callback) {
       const db = e.target.result;
       const tx = db.transaction('words', mode);
       const store = tx.objectStore('words');
-      callback(store);
+
+      // Create a safe wrapper around the store that validates keyPath before put
+      const safeStore = {
+        put(obj) {
+          try {
+            if (!obj || typeof obj.word === 'undefined' || obj.word === null) {
+              console.warn('useDB.safeStore: skipping put - missing word key', obj);
+              return;
+            }
+            // ensure word is a non-empty trimmed string (IndexedDB keyPath must evaluate)
+            const w = typeof obj.word === 'string' ? obj.word.trim() : String(obj.word);
+            if (!w) {
+              console.warn('useDB.safeStore: skipping put - empty word value', obj);
+              return;
+            }
+            obj.word = w; // normalize
+            return store.put(obj);
+          } catch (e) {
+            console.warn('useDB.safeStore: put failed', e, obj);
+            return;
+          }
+        },
+        add(obj) {
+          try { return store.add(obj); } catch (e) { console.warn('useDB.safeStore: add failed', e, obj); }
+        },
+        delete(key) { try { return store.delete(key); } catch (e) { console.warn('useDB.safeStore: delete failed', e, key); } },
+        clear() { try { return store.clear(); } catch (e) { console.warn('useDB.safeStore: clear failed', e); } },
+        get(key) { try { return store.get(key); } catch (e) { console.warn('useDB.safeStore: get failed', e, key); } },
+        openCursor(range, direction) { try { return store.openCursor(range, direction); } catch (e) { console.warn('useDB.safeStore: openCursor failed', e); } }
+      };
+
+      callback(safeStore);
       tx.oncomplete = resolve;
       tx.onerror = reject;
     };
