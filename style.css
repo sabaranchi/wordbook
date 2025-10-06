@@ -134,10 +134,31 @@ form input, form button {
   font-size: 1rem;
 }
 
+/* Sticky header: filter controls (top) and nav (below it) stay visible while scrolling.
+   We set a fixed top offset for nav to sit just below #filter-controls. If you change
+   the height of #filter-controls, update the `top` value on `nav` accordingly. */
+#filter-controls {
+  position: sticky;
+  top: 0;
+  z-index: 1001; /* above nav */
+  background: #ffffff; /* keep header opaque so content doesn't show through */
+  padding: 0.5rem 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
 nav {
   display: flex;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0; /* handled by sticky spacing */
+  position: sticky;
+  top: 48px; /* distance from top - matches #filter-controls height (adjust if needed) */
+  z-index: 1000;
+  background: #ffffff;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid rgba(0,0,0,0.04);
 }
 
 section {
