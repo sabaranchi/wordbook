@@ -3,50 +3,60 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>英単語帳</title>
+  <title>WordBook</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4668977801308895"
+     crossorigin="anonymous">
+  </script>
 </head>
-<body>
+<body>  
+  <!-- Fixed bottom banner (広告) 
+  <div id="bottom-banner" class="show-img" role="banner" aria-label="Bottom Banner">
+    <div class="banner-inner">
+      <iframe src="https://ad-network.example/ad_tag" title="Advertisement" class="banner-ad-iframe" frameborder="0" scrolling="no" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+    </div>
+  </div>
+-->
   <div class="header">
     <div class="header-left">
-      <h1>英単語帳</h1>
+      <h1>English Wordbook</h1>
     </div>
     <div class="user-area">
       <div id="g_id_button" aria-hidden="false"></div>
-      <div id="user-icon" title="未ログイン" aria-hidden="true" class="user-icon">👤</div>
+      <div id="user-icon" title="unlogged" aria-hidden="true" class="user-icon">👤</div>
       <button id="signout-btn" class="signout" style="display:none;">Sign out</button>
     </div>
   </div>
 
   <div id="progress-bar-container">
-    <label>習得率: <span id="progress-text">0%</span></label>
+    <label>Progress: <span id="progress-text">0%</span></label>
     <div id="progress-bar">
       <div id="progress-fill"></div>
     </div>
   </div>
 
   <div id="filter-controls">
-    <button onclick="applyFilter('all')">全表示</button>
-    <button onclick="applyFilter('learned')">習得済みのみ</button>
-    <button onclick="applyFilter('unlearned')">未習得のみ</button>
-    <button onclick="shuffleWords()">ランダム</button>
+    <button onclick="applyFilter('all')">Show All</button>
+    <button onclick="applyFilter('learned')">Show Learned Only</button>
+    <button onclick="applyFilter('unlearned')">Show Unlearned Only</button>
+    <button onclick="shuffleWords()">Random</button>
   </div>
 
   <nav>
-    <button onclick="showSection('add')">単語を追加</button>
-    <button onclick="showSection('quiz')">クイズを始める</button>
+    <button onclick="showSection('add')">Add Word</button>
+    <button onclick="showSection('quiz')">Start Quiz</button>
   </nav>
 
   <section id="add-section" style="display:none;">
     <!-- 単語追加フォーム -->
      <form id="add-word-form">
-      <input type="text" id="new-word" placeholder="単語" required />
-      <textarea id="new-meaning-ja" placeholder="日本語訳" rows="3"></textarea>
-      <textarea id="new-meaning" placeholder="意味" rows="3"></textarea>
-      <textarea id="new-example" placeholder="例文" rows="3"></textarea>
-      <input type="text" id="new-category" placeholder="カテゴリー" />
-      <button type="submit" id="add-button">追加</button>
+      <input type="text" id="new-word" placeholder="word" required />
+      <textarea id="new-meaning-ja" placeholder="Meaning (type in your own words)" rows="3"></textarea>
+      <textarea id="new-meaning" placeholder="Definition" rows="3"></textarea>
+      <textarea id="new-example" placeholder="Example" rows="3"></textarea>
+      <input type="text" id="new-category" placeholder="Category" />
+      <button type="submit" id="add-button">Add</button>
     </form>
   </section>
 
@@ -55,7 +65,7 @@
   </section>
   
 
-  <div id="loading">読み込み中...</div>
+  <div id="loading">loading...</div>
   <div id="word-container" style="display:none;"></div>
   
   

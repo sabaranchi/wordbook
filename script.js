@@ -3,7 +3,7 @@ let learnedWords = JSON.parse(localStorage.getItem('learnedWords') || '{}');
 let customWords = [];
 let currentQuestion = null;
 let question = null;
-let quizMode = localStorage.getItem('quizMode') || 'en-to-ja'; // en-to-ja / ja-to-en
+let quizMode = localStorage.getItem('quizMode') || 'en-to'; // en-to / ja-to-en
 let correctStreaks = JSON.parse(localStorage.getItem('correctStreaks') || '{}');
 // Enforce Google login only: no local/manual userId
 let userId = null;
@@ -422,6 +422,38 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// --- Bottom banner measurement (reserve bottom padding) ---
+(function setupBottomBanner() {
+  try {
+    const banner = document.getElementById('bottom-banner');
+    if (!banner) return;
+
+    // Measure and set CSS variable so content isn't covered by the bottom banner.
+    const setVar = () => {
+      const h = banner.offsetHeight || 0;
+      document.documentElement.style.setProperty('--bottom-banner-height', h + 'px');
+      // Also ensure body padding-bottom is at least that height (some UA styles may override)
+      // (CSS already uses the variable, but keep this for legacy support.)
+      try {
+        document.body.style.paddingBottom = h + 'px';
+      } catch (e) {}
+    };
+
+    // initial set after paint
+    window.requestAnimationFrame(setVar);
+    // update on resize/orientation change
+    window.addEventListener('resize', setVar);
+
+    // If the banner contains an iframe that may resize on load, listen for it
+    const iframe = banner.querySelector('iframe');
+    if (iframe) {
+      iframe.addEventListener('load', () => setVar());
+    }
+  } catch (e) {
+    console.warn('Bottom banner setup failed', e);
+  }
+})();
+
 //------------------------------------------
 // 🔍 検索機能
 //------------------------------------------
@@ -431,7 +463,7 @@ const nav = document.querySelector('nav');
 // 検索ボックス作成
 const searchBox = document.createElement('input');
 searchBox.word = 'search-box';
-searchBox.placeholder = '単語・意味で検索';
+searchBox.placeholder = 'search by word or meaning';
 searchBox.style.marginLeft = '10px';
 searchBox.style.marginTop = '8px';
 searchBox.style.padding = '8px';
@@ -629,36 +661,37 @@ function renderCard(word, actualIndex) {
   card.innerHTML = `
     <div class="word-header">
       <h2 contenteditable="true">${word.word || ''}</h2>
-      <button class="play-btn" title="発音を再生">🔊</button>
+      <button class="play-btn" title="Play pronunciation">🔊</button>
     </div>
 
-    <p class="meaning" style="display:none;"><strong>意味:</strong> 
+    <div class="meaning" style="display:none;">
+      <span class="label"><strong>Meaning:</strong> </span>
       <span class="value meaning_jp" contenteditable="true">${meaning_jpHTML}</span>
-    </p>
-    <button class="show-meaning-btn">意味を見る</button>
+    </div>
+    <button class="show-meaning-btn">Show Meaning</button>
 
     <div class="row">
-      <span class="label"><strong>定義:</strong></span>
+      <span class="label"><strong>Definition:</strong></span>
       <span class="value scrollable meaning_en" contenteditable="true">${meaningHTML}</span>
     </div>
 
     <div class="row">
-      <span class="label "><strong>例文:</strong></span>
+      <span class="label "><strong>Example:</strong></span>
       <span class="value scrollable example" contenteditable="true">${exampleHTML}</span>
     </div>
 
     <div class="row">
-      <span class="label"><strong>カテゴリー:</strong></span>
+      <span class="label"><strong>Category:</strong></span>
       <span class="value category" contenteditable="true">${categoryHTML}</span>
     </div>
 
     <label>
       <input type="checkbox" class="learned-checkbox" ${isLearned ? 'checked' : ''}>
-      習得済み
+      Learned
     </label>
 
-    <button class="delete-btn">削除</button>
-    <button class="auto-fill-btn">自動入力</button>
+    <button class="delete-btn">Delete</button>
+    <button class="auto-fill-btn">Auto Fill</button>
   `;
 
   // イベント割当（既存の editWord(index, field, value) を使う）
@@ -792,10 +825,10 @@ function shuffleWords() {
 // 🧠 クイズ機能
 //------------------------------------------
 function toggleQuizMode() {
-  quizMode = quizMode === 'en-to-ja' ? 'ja-to-en' : 'en-to-ja';
+  quizMode = quizMode === 'en-to' ? 'to-en' : 'en-to';
   localStorage.setItem('quizMode', quizMode);
   const quizModeLabelEl = document.getElementById('quiz-mode-label');
-  if (quizModeLabelEl) quizModeLabelEl.textContent = quizMode === 'en-to-ja' ? '英→日' : '日→英';
+  if (quizModeLabelEl) quizModeLabelEl.textContent = quizMode === 'en-to' ? 'from English' : 'to English';
   startQuiz();
 }
 
@@ -821,18 +854,18 @@ function startQuiz() {
 
   const distractors = shuffle(
     myWords.filter(w => w.word !== question.word)
-      .map(w => quizMode === 'en-to-ja' ? w.meaning_jp : w.word)
+      .map(w => quizMode === 'en-to' ? w.meaning_jp : w.word)
   ).slice(0, 4);
 
-  const correctAnswer = quizMode === 'en-to-ja' ? question.meaning_jp : question.word;
+  const correctAnswer = quizMode === 'en-to' ? question.meaning_jp : question.word;
   const choices = shuffle([correctAnswer, ...distractors]);
 
-  const questionText = quizMode === 'en-to-ja'
-    ? `「${question.word}」の意味は？`
-    : `「${question.meaning_jp}」に対応する英単語は？`;
+  const questionText = quizMode === 'en-to'
+    ? `「${question.word}」means?`
+    : `「${question.meaning_jp}」corresponds to which English word?`;
 
   quizArea.innerHTML = `
-    <h3>${questionText}<button class="play-btn" title="発音を再生">🔊</button><button onclick="toggleQuizMode()">切り替え: <span id="quiz-mode-label">${quizMode === 'en-to-ja' ? '英→日' : '日→英'}</span></button></h3>
+    <h3>${questionText}<button class="play-btn" title="Play pronunciation">🔊</button><button onclick="toggleQuizMode()">Switch: <span id="quiz-mode-label">${quizMode === 'en-to' ? 'to English' : 'from English'}</span></button></h3>
     ${choices.map(c => `<button onclick="checkAnswer('${c}', '${correctAnswer}', '${question.word}')">${c}</button>`).join('')}
   `;
 
@@ -864,7 +897,7 @@ function checkAnswer(selected, correct, word) {
         localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
       }
 
-      alert(`不正解… 正しくは「${correct}」`);
+      alert(`Incorrect... The correct answer is「${correct}」`);
     }
 
     // DB とシートに確実に状態を送る（数値化して渡す）

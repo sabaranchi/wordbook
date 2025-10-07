@@ -1,6 +1,9 @@
 body {
   font-family: sans-serif;
-  padding: 1rem;
+  /* Reserve default safe space for bottom banner to avoid initial overlap. JS will update this variable to the exact height. */
+  --bottom-banner-height: 56px;
+  /* Push content up so bottom banner won't overlap content; individual components maintain spacing. */
+  padding: 1rem 1rem calc(var(--bottom-banner-height)) 1rem;
   background: #f0f4f8;
 }
 
@@ -15,6 +18,8 @@ h1 {
   align-items: center;
   gap: 1rem;
   margin-bottom: 1rem;
+  /* header sits naturally below the body padding (no extra margin needed) */
+  margin-top: 0;
 }
 
 .header-left h1 {
@@ -139,7 +144,7 @@ form input, form button {
    the height of #filter-controls, update the `top` value on `nav` accordingly. */
 #filter-controls {
   position: sticky;
-  top: 0;
+  top: 0; /* stick to top of viewport */
   z-index: 1001; /* above nav */
   background: #ffffff; /* keep header opaque so content doesn't show through */
   padding: 0.5rem 0.5rem;
@@ -154,12 +159,44 @@ nav {
   gap: 1rem;
   margin-bottom: 0; /* handled by sticky spacing */
   position: sticky;
-  top: 48px; /* distance from top - matches #filter-controls height (adjust if needed) */
+  top: 48px; /* below filter-controls */
   z-index: 1000;
   background: #ffffff;
   padding: 0.35rem 0.5rem;
   border-bottom: 1px solid rgba(0,0,0,0.04);
 }
+
+/* Bottom banner styles */
+#bottom-banner {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(90deg,#0d6efd,#6610f2);
+  color: #fff;
+  z-index: 1100;
+  height: 56px;
+  /* keep layout stable when inserting img/iframe */
+  box-sizing: border-box;
+  overflow: hidden;
+  /* remove shadow so there's no visual gap above the banner */
+  box-shadow: none;
+}
+
+#bottom-banner .banner-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Reduce vertical padding to minimize gap with header above */
+  padding: 0 12px;
+}
+
+#bottom-banner .banner-content {
+  font-size: 14px;
+}
+
 
 section {
   margin-top: 1rem;
