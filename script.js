@@ -64,8 +64,8 @@ function initGoogleIdentity() {
 function handleCredentialResponse(resp) {
   if (!resp || !resp.credential) return;
   currentIdToken = resp.credential;
-  // persist current id_token for longer-lived sessions (localStorage used)
-  try { saveIdToken(currentIdToken); } catch (e) { /* ignore */ }
+  // persist current id_token for page reloads (sessionStorage used for lifecycle)
+  try { sessionStorage.setItem('id_token', currentIdToken); } catch (e) { /* ignore */ }
   const payload = parseJwt(currentIdToken);
   if (payload && payload.sub) {
     // for UI, set userId and update compact user icon (title contains email)
@@ -81,6 +81,18 @@ function handleCredentialResponse(resp) {
     }
     // show signout button
     const so = document.getElementById('signout-btn'); if (so) so.style.display = 'inline-block';
+
+    // Create server-side session so the browser keeps login across restarts
+    try {
+      fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ id_token: currentIdToken })
+      }).then(r => r.json()).then(j => {
+        console.log('session create response', j);
+      }).catch(e => console.warn('session create failed', e));
+    } catch (e) { console.warn('session create threw', e); }
 
     // Hybrid flow: first render local cache (fast), then fetch server list in background and sync
     readLocalAll().then(localRows => {
@@ -144,17 +156,11 @@ function handleCredentialResponse(resp) {
   }
 }
 
-  // Restore id_token from localStorage on page load to avoid being logged out on reload
+// Restore id_token from sessionStorage on page load to avoid being logged out on reload
 function restoreSessionFromStorage() {
   try {
-    const token = localStorage.getItem('id_token');
+    const token = sessionStorage.getItem('id_token');
     if (!token) return false;
-    // validate expiry
-    if (isTokenExpired(token)) {
-      // remove expired token
-      try { localStorage.removeItem('id_token'); localStorage.removeItem('id_token_exp'); } catch (e) {}
-      return false;
-    }
     currentIdToken = token;
     const payload = parseJwt(currentIdToken);
     if (!payload) return false;
@@ -225,26 +231,6 @@ function restoreSessionFromStorage() {
 
     return true;
   } catch (e) { return false; }
-}
-
-// Save id_token and store expiry timestamp for quick checks
-function saveIdToken(token) {
-  try {
-    const payload = parseJwt(token);
-    if (!payload) return;
-    localStorage.setItem('id_token', token);
-    if (payload.exp) localStorage.setItem('id_token_exp', String(payload.exp * 1000)); // ms
-  } catch (e) { console.warn('saveIdToken failed', e); }
-}
-
-function isTokenExpired(token) {
-  try {
-    const payload = parseJwt(token);
-    if (!payload || !payload.exp) return true;
-    const expMs = Number(payload.exp) * 1000;
-    // consider token expired a bit before actual expiry to avoid races
-    return Date.now() > (expMs - 30000);
-  } catch (e) { return true; }
 }
 
 // Central helper to call the Apps Script endpoint. It attaches id_token when available.
@@ -409,22 +395,83 @@ window.addEventListener('DOMContentLoaded', () => {
   console.log('init: g_id_button element', !!gbtn);
   initGoogleIdentity();
 
-  // Try to restore session (id_token) from localStorage to avoid logout on reload
-  const restored = restoreSessionFromStorage();
-  if (!restored) {
-    // Not restored: show login UI (don't fetch user list until login)
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('word-container').style.display = 'none';
-    // If Google Identity is available, trigger One Tap prompt to try silent/automatic sign-in
+  // Try to restore server-side session (cookie). If present, use it to set UI.
+  (async function tryRestore() {
     try {
-      if (window.google && window.google.accounts && window.google.accounts.id && typeof window.google.accounts.id.prompt === 'function') {
-        // prompt may show One Tap or attempt automatic selection depending on browser/state
-        window.google.accounts.id.prompt();
+      const r = await fetch('/api/session', { method: 'GET', credentials: 'include' });
+      if (r.ok) {
+        const j = await r.json();
+        if (j && j.loggedIn) {
+          userId = j.userId || null;
+          const userIcon = document.getElementById('user-icon');
+          if (userIcon) {
+            const displayText = userId || '未ログイン';
+            userIcon.title = displayText;
+            const initial = (userId || '').charAt(0).toUpperCase();
+            if (typeof userIcon.textContent !== 'undefined') userIcon.textContent = initial || '👤';
+            userIcon.setAttribute('aria-hidden', 'false');
+          }
+          const so = document.getElementById('signout-btn'); if (so) so.style.display = 'inline-block';
+
+          // Try to restore id_token from sessionStorage for Apps Script calls. If missing,
+          // prompt Google One Tap to acquire a fresh id_token (auto selection may apply).
+          const restored = restoreSessionFromStorage();
+          if (!restored && window.google && window.google.accounts && window.google.accounts.id) {
+            try { window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse, auto_select: true }); window.google.accounts.id.prompt(); } catch (e) {}
+          }
+
+          // Now perform local-first render and background sync as if logged in
+          readLocalAll().then(localRows => {
+            if (Array.isArray(localRows) && localRows.length > 0) {
+              customWords = localRows.map((w, i) => ({ ...w, rowIndex: i }));
+              learnedWords = {};
+              correctStreaks = {};
+              customWords.forEach(word => {
+                learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
+                correctStreaks[word.word] = Number(word.streak) || 0;
+              });
+              localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+              localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+              document.getElementById('loading').style.display = 'none';
+              document.getElementById('word-container').style.display = 'block';
+              renderWords();
+            }
+
+            // Background: still try to fetch server list via Apps Script if id_token available
+            callSheetApi('list').then(serverData => {
+              if (!Array.isArray(serverData)) serverData = [];
+              useDB('readwrite', store => {
+                try { store.clear(); } catch (e) {}
+                serverData.forEach(w => { if (w && w.word) store.put(w); });
+              }).then(() => {
+                customWords = serverData.map((word, i) => ({ ...word, rowIndex: i }));
+                learnedWords = {};
+                correctStreaks = {};
+                customWords.forEach(word => {
+                  learnedWords[word.word] = word.learned === true || word.learned === 'TRUE' || word.learned === 'true';
+                  correctStreaks[word.word] = Number(word.streak) || 0;
+                });
+                localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
+                localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
+                renderWords();
+              }).catch(e => console.warn('Failed to write server rows to IndexedDB', e));
+            }).catch(err => console.warn('Background fetch of server list failed', err));
+          }).catch(err => { console.warn('readLocalAll failed', err); document.getElementById('loading').style.display = 'none'; document.getElementById('word-container').style.display = 'none'; });
+
+          return;
+        }
       }
     } catch (e) {
-      console.warn('google.accounts.id.prompt failed', e);
+      console.warn('restore server session failed', e);
     }
-  }
+
+    // Not restored: fall back to client-side restore (sessionStorage) and show login UI
+    const restoredLocal = restoreSessionFromStorage();
+    if (!restoredLocal) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('word-container').style.display = 'none';
+    }
+  })();
 
   // sign-out button behaviour: attach handler regardless of restore state
   const signoutBtn = document.getElementById('signout-btn');
@@ -442,12 +489,17 @@ window.addEventListener('DOMContentLoaded', () => {
         console.warn('signout helper failed', e);
       }
 
+      // Attempt to clear server-side session cookie
+      try {
+        await fetch('/api/session', { method: 'DELETE', credentials: 'include' });
+      } catch (e) { console.warn('server session delete failed', e); }
+
       // Clear client-side session regardless of the above
       currentIdToken = null;
-      try { localStorage.removeItem('id_token'); localStorage.removeItem('id_token_exp'); } catch (e) {}
+      try { sessionStorage.removeItem('id_token'); } catch (e) {}
       userId = null;
-  const userIcon = document.getElementById('user-icon');
-  if (userIcon) { userIcon.title = '未ログイン'; if (typeof userIcon.textContent !== 'undefined') userIcon.textContent = '👤'; }
+      const userIcon = document.getElementById('user-icon');
+      if (userIcon) { userIcon.title = '未ログイン'; if (typeof userIcon.textContent !== 'undefined') userIcon.textContent = '👤'; }
       signoutBtn.style.display = 'none';
       // clear local words view
       customWords = [];

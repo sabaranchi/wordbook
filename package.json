@@ -1,0 +1,12 @@
+{
+  "name": "word-book",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "18.x"
+  },
+  "scripts": {
+    "vercel-build": "echo 'no build required'",
+    "start": "node server.js"
+  }
+}
