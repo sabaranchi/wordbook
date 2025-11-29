@@ -64,8 +64,8 @@ function initGoogleIdentity() {
 function handleCredentialResponse(resp) {
   if (!resp || !resp.credential) return;
   currentIdToken = resp.credential;
-  // persist current id_token for page reloads (sessionStorage used for lifecycle)
-  try { sessionStorage.setItem('id_token', currentIdToken); } catch (e) { /* ignore */ }
+  // persist current id_token for longer-lived sessions (localStorage used)
+  try { saveIdToken(currentIdToken); } catch (e) { /* ignore */ }
   const payload = parseJwt(currentIdToken);
   if (payload && payload.sub) {
     // for UI, set userId and update compact user icon (title contains email)
@@ -144,11 +144,17 @@ function handleCredentialResponse(resp) {
   }
 }
 
-// Restore id_token from sessionStorage on page load to avoid being logged out on reload
+  // Restore id_token from localStorage on page load to avoid being logged out on reload
 function restoreSessionFromStorage() {
   try {
-    const token = sessionStorage.getItem('id_token');
+    const token = localStorage.getItem('id_token');
     if (!token) return false;
+    // validate expiry
+    if (isTokenExpired(token)) {
+      // remove expired token
+      try { localStorage.removeItem('id_token'); localStorage.removeItem('id_token_exp'); } catch (e) {}
+      return false;
+    }
     currentIdToken = token;
     const payload = parseJwt(currentIdToken);
     if (!payload) return false;
@@ -219,6 +225,26 @@ function restoreSessionFromStorage() {
 
     return true;
   } catch (e) { return false; }
+}
+
+// Save id_token and store expiry timestamp for quick checks
+function saveIdToken(token) {
+  try {
+    const payload = parseJwt(token);
+    if (!payload) return;
+    localStorage.setItem('id_token', token);
+    if (payload.exp) localStorage.setItem('id_token_exp', String(payload.exp * 1000)); // ms
+  } catch (e) { console.warn('saveIdToken failed', e); }
+}
+
+function isTokenExpired(token) {
+  try {
+    const payload = parseJwt(token);
+    if (!payload || !payload.exp) return true;
+    const expMs = Number(payload.exp) * 1000;
+    // consider token expired a bit before actual expiry to avoid races
+    return Date.now() > (expMs - 30000);
+  } catch (e) { return true; }
 }
 
 // Central helper to call the Apps Script endpoint. It attaches id_token when available.
@@ -383,12 +409,21 @@ window.addEventListener('DOMContentLoaded', () => {
   console.log('init: g_id_button element', !!gbtn);
   initGoogleIdentity();
 
-  // Try to restore session (id_token) from sessionStorage to avoid logout on reload
+  // Try to restore session (id_token) from localStorage to avoid logout on reload
   const restored = restoreSessionFromStorage();
   if (!restored) {
     // Not restored: show login UI (don't fetch user list until login)
     document.getElementById('loading').style.display = 'none';
     document.getElementById('word-container').style.display = 'none';
+    // If Google Identity is available, trigger One Tap prompt to try silent/automatic sign-in
+    try {
+      if (window.google && window.google.accounts && window.google.accounts.id && typeof window.google.accounts.id.prompt === 'function') {
+        // prompt may show One Tap or attempt automatic selection depending on browser/state
+        window.google.accounts.id.prompt();
+      }
+    } catch (e) {
+      console.warn('google.accounts.id.prompt failed', e);
+    }
   }
 
   // sign-out button behaviour: attach handler regardless of restore state
@@ -409,7 +444,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       // Clear client-side session regardless of the above
       currentIdToken = null;
-      try { sessionStorage.removeItem('id_token'); } catch (e) {}
+      try { localStorage.removeItem('id_token'); localStorage.removeItem('id_token_exp'); } catch (e) {}
       userId = null;
   const userIcon = document.getElementById('user-icon');
   if (userIcon) { userIcon.title = '未ログイン'; if (typeof userIcon.textContent !== 'undefined') userIcon.textContent = '👤'; }
