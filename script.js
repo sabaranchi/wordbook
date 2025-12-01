@@ -10,7 +10,8 @@ let userId = null;
 
 
 
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbwItz88hBurwvrR6To-sG9-zsG75tf8OWjVlSqtBllpVjL-iRb2Dr7UaUHfimzEIOV1WA/exec';
+// When using server proxy on Vercel, set to '/api/sheets'. Otherwise set to your Apps Script URL.
+const SHEET_API_URL = '/api/sheets';
 // Google Identity: set your client id here
 const GOOGLE_CLIENT_ID = '631768968773-jakkcpa1ia1qb8rnec2mj4jqp6ohnoc5.apps.googleusercontent.com';
 let currentIdToken = null;
@@ -269,6 +270,24 @@ function restoreSessionFromStorage() {
 // Central helper to call the Apps Script endpoint. It attaches id_token when available.
 async function callSheetApi(action, params = {}) {
   try {
+    // If using server proxy (local path), send JSON and include credentials (cookie)
+    if (SHEET_API_URL.startsWith('/api/')) {
+      const res = await fetch(SHEET_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(Object.assign({ action }, params))
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        console.error('callSheetApi HTTP error', res.status, text);
+        if (res.status === 401 || res.status === 403) showGsiFallback('認証エラー: 再度ログインしてください。');
+        try { return JSON.parse(text); } catch (e) { return text; }
+      }
+      try { return JSON.parse(text); } catch (e) { return text; }
+    }
+
+    // Otherwise, call legacy Apps Script endpoint (attach id_token)
     const body = new URLSearchParams();
     body.append('action', action);
     Object.keys(params || {}).forEach(k => {
@@ -276,7 +295,13 @@ async function callSheetApi(action, params = {}) {
       if (v === undefined || v === null) return;
       body.append(k, String(v));
     });
-    if (currentIdToken) body.append('id_token', currentIdToken);
+    // If we don't have an id_token for direct Apps Script calls, surface a message
+    if (!currentIdToken) {
+      console.warn('callSheetApi: missing id_token for Apps Script');
+      showGsiFallback('操作を続行するには Google でログインしてください。');
+      throw new Error('missing_id_token');
+    }
+    body.append('id_token', currentIdToken);
 
     const res = await fetch(SHEET_API_URL, {
       method: 'POST',
@@ -287,12 +312,17 @@ async function callSheetApi(action, params = {}) {
     const text = await res.text();
     if (!res.ok) {
       console.error('callSheetApi HTTP error', res.status, text);
-      // still try to parse JSON
+      if (res.status === 401 || res.status === 403) {
+        showGsiFallback('認証エラー: 再度ログインしてください。');
+      }
       try { return JSON.parse(text); } catch (e) { return text; }
     }
     try { return JSON.parse(text); } catch (e) { return text; }
   } catch (e) {
     console.error('callSheetApi failed', e);
+    // Surface user-friendly message for known error
+    if (e && e.message === 'missing_id_token') throw e;
+    showGsiFallback('通信エラーが発生しました。ネットワーク設定や拡張機能を確認してください。');
     throw e;
   }
 }
