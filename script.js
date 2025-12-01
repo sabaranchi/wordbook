@@ -64,22 +64,47 @@ function initGoogleIdentity() {
 }
 
 // Try prompting One Tap / FedCM safely. On error, show user-facing fallback banner.
-function tryPromptGoogleOneTap() {
+async function tryPromptGoogleOneTap(timeoutMs = 4000) {
   try {
-    if (window.google && window.google.accounts && window.google.accounts.id) {
-      // Use prompt with a notification handler to detect skipped/dismissed cases
-      window.google.accounts.id.prompt((notification) => {
-        // notification can be 'displayed','skipped','dismissed' etc.
-        console.log('GSI prompt notification', notification);
-        if (notification && notification.type === 'suppressed') {
-          // show fallback if suppressed
-          showGsiFallback('自動サインインが利用できません。手動でログインしてください。');
-        }
-      });
+    if (!(window.google && window.google.accounts && window.google.accounts.id)) return false;
+
+    // Call prompt without relying on the notification.status helper methods
+    // which may be deprecated when FedCM becomes mandatory. We instead
+    // wait for a credential to arrive (handleCredentialResponse sets
+    // `currentIdToken`) and fall back after a short timeout.
+    try {
+      window.google.accounts.id.prompt();
+    } catch (err) {
+      console.warn('GSI prompt invocation failed:', err);
+      showGsiFallback('自動サインインに失敗しました。手動でログインしてください。');
+      return false;
     }
+
+    // Wait for credential to be set by handleCredentialResponse or timeout
+    const start = Date.now();
+    return await new Promise((resolve) => {
+      const check = () => {
+        if (currentIdToken) {
+          // credential arrived — ensure fallback UI is hidden and resolve
+          try { hideGsiFallback(); } catch (e) {}
+          resolve(true);
+          return;
+        }
+        if (Date.now() - start > timeoutMs) {
+          // timeout — show friendly fallback UI so user can sign in manually
+          showGsiFallback('自動サインインがタイムアウトしました。手動でログインしてください。');
+          resolve(false);
+          return;
+        }
+        // poll a few times until timeout
+        setTimeout(check, 150);
+      };
+      check();
+    });
   } catch (err) {
     console.warn('GSI prompt failed:', err);
-    showGsiFallback('自動サインインに失敗しました。手動でログインしてください。');
+    showGsiFallback('自動サインイン中にエラーが発生しました。手動でログインしてください。');
+    return false;
   }
 }
 
@@ -707,6 +732,14 @@ async function addWord(wordObj) {
   });
 
   await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp, meaning: wordObj.meaning, example: wordObj.example, category: wordObj.category, userId });
+  // Ensure server receives the full row shape matching spreadsheet columns
+  // (userId, word, meaning_jp, meaning, example, category, learned, streak)
+  try {
+    await callSheetApi('add', { userId, word: wordObj.word, meaning_jp: wordObj.meaning_jp || '', meaning: wordObj.meaning || '', example: wordObj.example || '', category: wordObj.category || '', learned: !!wordObj.learned, streak: Number(wordObj.streak) || 0 });
+  } catch (e) {
+    // If proxy/add duplicate call fails, ignore because above call already attempted; log for debug
+    console.warn('Secondary add callSheetApi failed', e);
+  }
   // prefer using callSheetApi for consistent id_token forwarding
   // await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp, meaning: wordObj.meaning, example: wordObj.example, category: wordObj.category, userId });
 
@@ -738,7 +771,7 @@ async function editWord(index, field, value) {
   });
 
 
-  await callSheetApi('update', { word: word.word, meaning_jp: word.meaning_jp, meaning: word.meaning, example: word.example, category: word.category, userId: word.userId });
+  await callSheetApi('update', { userId: word.userId, word: word.word, meaning_jp: word.meaning_jp || '', meaning: word.meaning || '', example: word.example || '', category: word.category || '', learned: !!word.learned, streak: Number(word.streak) || 0 });
   // alternatively: await callSheetApi('update', { word: word.word, meaning_jp: word.meaning_jp, meaning: word.meaning, example: word.example, category: word.category, userId: word.userId });
 
   // 全体再描画の代わりに該当カードを差分更新
@@ -770,7 +803,7 @@ async function updateLearningStatus(word, learned, streak) {
   });
 
   try {
-    await callSheetApi('update', { word: word2.word, learned: word2.learned, streak: word2.streak, userId: word2.userId });
+    await callSheetApi('update', { userId: word2.userId, word: word2.word, meaning_jp: word2.meaning_jp || '', meaning: word2.meaning || '', example: word2.example || '', category: word2.category || '', learned: !!word2.learned, streak: Number(word2.streak) || 0 });
   } catch (e) {
     console.error('Sheets update failed', e);
   }
@@ -785,7 +818,8 @@ function deleteWord(index) {
   if (!confirm('この単語を削除しますか？')) return;
   customWords.splice(index, 1);
   useDB('readwrite', store => store.delete(id));
-  callSheetApi('delete', { id, userId }).catch(e => console.warn('delete to Sheets failed', e));
+  // Send `word` key (spreadsheet key) along with userId for delete
+  callSheetApi('delete', { userId, word: id }).catch(e => console.warn('delete to Sheets failed', e));
   // Better: callSheetApi('delete', { id, userId }).catch(e => console.warn('delete to Sheets failed', e));
 
   // DOMから該当カードを削除（全再描画しない）
@@ -1394,11 +1428,14 @@ async function enrichWordFromDictionary(index) {
     try {
       console.log('calling callSheetApi update for', wordObj.word);
       const resp = await callSheetApi('update', {
+        userId: wordObj.userId || userId,
         word: wordObj.word,
-        meaning: wordObj.meaning,
-        example: wordObj.example,
-        category: wordObj.category,
-        userId: wordObj.userId || userId
+        meaning_jp: wordObj.meaning_jp || '',
+        meaning: wordObj.meaning || '',
+        example: wordObj.example || '',
+        category: wordObj.category || '',
+        learned: !!wordObj.learned,
+        streak: Number(wordObj.streak) || 0
       });
       console.log('callSheetApi update response:', resp);
       // Determine success in several server response styles
@@ -1414,7 +1451,7 @@ async function enrichWordFromDictionary(index) {
         console.warn('Update did not report success; attempting to add instead', resp);
         // ensure userId is set so add will attribute correctly
         wordObj.userId = wordObj.userId || userId;
-        const addResp = await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp || '', meaning: wordObj.meaning || '', example: wordObj.example || '', category: wordObj.category || '', userId: wordObj.userId });
+        const addResp = await callSheetApi('add', { userId: wordObj.userId || userId, word: wordObj.word, meaning_jp: wordObj.meaning_jp || '', meaning: wordObj.meaning || '', example: wordObj.example || '', category: wordObj.category || '', learned: !!wordObj.learned, streak: Number(wordObj.streak) || 0 });
         console.log('callSheetApi add response:', addResp);
         let added = false;
         if (addResp && typeof addResp === 'object' && addResp.success) added = true;
