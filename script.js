@@ -10,8 +10,9 @@ let userId = null;
 
 
 
-// When using server proxy on Vercel, set to '/api/sheets'. Otherwise set to your Apps Script URL.
-const SHEET_API_URL = '/api/sheets';
+// When using server proxy on Vercel, set to '/api/sheets-proxy'.
+// Otherwise set to your Apps Script URL.
+const SHEET_API_URL = '/api/sheets-proxy';
 // Google Identity: set your client id here
 const GOOGLE_CLIENT_ID = '631768968773-jakkcpa1ia1qb8rnec2mj4jqp6ohnoc5.apps.googleusercontent.com';
 let currentIdToken = null;
