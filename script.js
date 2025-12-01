@@ -732,14 +732,6 @@ async function addWord(wordObj) {
   });
 
   await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp, meaning: wordObj.meaning, example: wordObj.example, category: wordObj.category, userId });
-  // Ensure server receives the full row shape matching spreadsheet columns
-  // (userId, word, meaning_jp, meaning, example, category, learned, streak)
-  try {
-    await callSheetApi('add', { userId, word: wordObj.word, meaning_jp: wordObj.meaning_jp || '', meaning: wordObj.meaning || '', example: wordObj.example || '', category: wordObj.category || '', learned: !!wordObj.learned, streak: Number(wordObj.streak) || 0 });
-  } catch (e) {
-    // If proxy/add duplicate call fails, ignore because above call already attempted; log for debug
-    console.warn('Secondary add callSheetApi failed', e);
-  }
   // prefer using callSheetApi for consistent id_token forwarding
   // await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp, meaning: wordObj.meaning, example: wordObj.example, category: wordObj.category, userId });
 
@@ -771,7 +763,7 @@ async function editWord(index, field, value) {
   });
 
 
-  await callSheetApi('update', { userId: word.userId, word: word.word, meaning_jp: word.meaning_jp || '', meaning: word.meaning || '', example: word.example || '', category: word.category || '', learned: !!word.learned, streak: Number(word.streak) || 0 });
+  await callSheetApi('update', { word: word.word, meaning_jp: word.meaning_jp, meaning: word.meaning, example: word.example, category: word.category, userId: word.userId });
   // alternatively: await callSheetApi('update', { word: word.word, meaning_jp: word.meaning_jp, meaning: word.meaning, example: word.example, category: word.category, userId: word.userId });
 
   // 全体再描画の代わりに該当カードを差分更新
@@ -803,7 +795,7 @@ async function updateLearningStatus(word, learned, streak) {
   });
 
   try {
-    await callSheetApi('update', { userId: word2.userId, word: word2.word, meaning_jp: word2.meaning_jp || '', meaning: word2.meaning || '', example: word2.example || '', category: word2.category || '', learned: !!word2.learned, streak: Number(word2.streak) || 0 });
+    await callSheetApi('update', { word: word2.word, learned: word2.learned, streak: word2.streak, userId: word2.userId });
   } catch (e) {
     console.error('Sheets update failed', e);
   }
@@ -818,8 +810,7 @@ function deleteWord(index) {
   if (!confirm('この単語を削除しますか？')) return;
   customWords.splice(index, 1);
   useDB('readwrite', store => store.delete(id));
-  // Send `word` key (spreadsheet key) along with userId for delete
-  callSheetApi('delete', { userId, word: id }).catch(e => console.warn('delete to Sheets failed', e));
+  callSheetApi('delete', { id, userId }).catch(e => console.warn('delete to Sheets failed', e));
   // Better: callSheetApi('delete', { id, userId }).catch(e => console.warn('delete to Sheets failed', e));
 
   // DOMから該当カードを削除（全再描画しない）
@@ -1428,14 +1419,11 @@ async function enrichWordFromDictionary(index) {
     try {
       console.log('calling callSheetApi update for', wordObj.word);
       const resp = await callSheetApi('update', {
-        userId: wordObj.userId || userId,
         word: wordObj.word,
-        meaning_jp: wordObj.meaning_jp || '',
-        meaning: wordObj.meaning || '',
-        example: wordObj.example || '',
-        category: wordObj.category || '',
-        learned: !!wordObj.learned,
-        streak: Number(wordObj.streak) || 0
+        meaning: wordObj.meaning,
+        example: wordObj.example,
+        category: wordObj.category,
+        userId: wordObj.userId || userId
       });
       console.log('callSheetApi update response:', resp);
       // Determine success in several server response styles
@@ -1451,7 +1439,7 @@ async function enrichWordFromDictionary(index) {
         console.warn('Update did not report success; attempting to add instead', resp);
         // ensure userId is set so add will attribute correctly
         wordObj.userId = wordObj.userId || userId;
-        const addResp = await callSheetApi('add', { userId: wordObj.userId || userId, word: wordObj.word, meaning_jp: wordObj.meaning_jp || '', meaning: wordObj.meaning || '', example: wordObj.example || '', category: wordObj.category || '', learned: !!wordObj.learned, streak: Number(wordObj.streak) || 0 });
+        const addResp = await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp || '', meaning: wordObj.meaning || '', example: wordObj.example || '', category: wordObj.category || '', userId: wordObj.userId });
         console.log('callSheetApi add response:', addResp);
         let added = false;
         if (addResp && typeof addResp === 'object' && addResp.success) added = true;

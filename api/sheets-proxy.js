@@ -130,8 +130,9 @@ module.exports = async (req, res) => {
     const action = body.action;
     if (!action) return res.status(400).json({ error: 'missing_action' });
 
-    // header columns expected
-    const header = ['word','meaning_jp','meaning','example','category','userId','learned','streak','updatedAt'];
+    // header columns expected (configured to match sheet tab column order)
+    // Desired order: userId, word, meaning_jp, meaning, example, category, learned, streak, updatedAt
+    const header = ['userId','word','meaning_jp','meaning','example','category','learned','streak','updatedAt'];
 
     if (action === 'list') {
       const data = await readSheetValues(accessToken);
@@ -152,7 +153,8 @@ module.exports = async (req, res) => {
       const params = body;
       if (!params.word) return res.status(400).json({ error: 'missing word' });
       const now = new Date().toISOString();
-      const row = [params.word, params.meaning_jp||'', params.meaning||'', params.example||'', params.category||'', userId, String(params.learned||''), String(params.streak||0), now];
+      // Build row in spreadsheet column order: userId first, then word, ...
+      const row = [userId, params.word, params.meaning_jp||'', params.meaning||'', params.example||'', params.category||'', String(params.learned||''), String(params.streak||0), now];
       const resp = await appendRow(accessToken, row);
       return res.json({ ok: true, result: resp });
     }
@@ -169,14 +171,15 @@ module.exports = async (req, res) => {
       let foundIndex = -1;
       for (let i=0;i<rows.length;i++){
         const row = rows[i];
-        const w = String(row[0]||'').trim();
-        const uid = String(row[5]||'').trim();
+        // Spreadsheet order: userId at col 0, word at col 1
+        const uid = String(row[0]||'').trim();
+        const w = String(row[1]||'').trim();
         if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
       const now = new Date().toISOString();
-      const newRow = [params.word, params.meaning_jp||'', params.meaning||'', params.example||'', params.category||'', userId, String(params.learned||''), String(params.streak||0), now];
-      const resp = await updateRow(accessToken, foundIndex+1, newRow); // careful: our updateRow expects rowIndex (1-based excluding header?) adjust
+      const newRow = [userId, params.word, params.meaning_jp||'', params.meaning||'', params.example||'', params.category||'', String(params.learned||''), String(params.streak||0), now];
+      const resp = await updateRow(accessToken, foundIndex+1, newRow);
       return res.json({ ok: true, result: resp });
     }
 
@@ -191,8 +194,8 @@ module.exports = async (req, res) => {
       let foundIndex = -1;
       for (let i=0;i<rows.length;i++){
         const row = rows[i];
-        const w = String(row[0]||'').trim();
-        const uid = String(row[5]||'').trim();
+        const uid = String(row[0]||'').trim();
+        const w = String(row[1]||'').trim();
         if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
