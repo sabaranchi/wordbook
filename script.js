@@ -61,6 +61,39 @@ function initGoogleIdentity() {
   tryInit();
 }
 
+// Try prompting One Tap / FedCM safely. On error, show user-facing fallback banner.
+function tryPromptGoogleOneTap() {
+  try {
+    if (window.google && window.google.accounts && window.google.accounts.id) {
+      // Use prompt with a notification handler to detect skipped/dismissed cases
+      window.google.accounts.id.prompt((notification) => {
+        // notification can be 'displayed','skipped','dismissed' etc.
+        console.log('GSI prompt notification', notification);
+        if (notification && notification.type === 'suppressed') {
+          // show fallback if suppressed
+          showGsiFallback('自動サインインが利用できません。手動でログインしてください。');
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('GSI prompt failed:', err);
+    showGsiFallback('自動サインインに失敗しました。手動でログインしてください。');
+  }
+}
+
+function showGsiFallback(msg) {
+  try {
+    const el = document.getElementById('gsi-fallback-banner');
+    const text = document.getElementById('gsi-fallback-text');
+    if (text && msg) text.textContent = msg;
+    if (el) el.classList.add('visible');
+  } catch (e) { console.warn('showGsiFallback failed', e); }
+}
+
+function hideGsiFallback() {
+  try { const el = document.getElementById('gsi-fallback-banner'); if (el) el.classList.remove('visible'); } catch (e) {}
+}
+
 function handleCredentialResponse(resp) {
   if (!resp || !resp.credential) return;
   currentIdToken = resp.credential;
@@ -417,7 +450,14 @@ window.addEventListener('DOMContentLoaded', () => {
           // prompt Google One Tap to acquire a fresh id_token (auto selection may apply).
           const restored = restoreSessionFromStorage();
           if (!restored && window.google && window.google.accounts && window.google.accounts.id) {
-            try { window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse, auto_select: true }); window.google.accounts.id.prompt(); } catch (e) {}
+            try {
+              window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse, auto_select: true });
+              // Try prompting safely and show fallback on failure
+              tryPromptGoogleOneTap();
+            } catch (e) {
+              console.warn('GSI init/prompt failed during restore', e);
+              showGsiFallback('自動サインインが利用できません。手動でログインしてください。');
+            }
           }
 
           // Now perform local-first render and background sync as if logged in
@@ -505,6 +545,22 @@ window.addEventListener('DOMContentLoaded', () => {
       customWords = [];
       const wc = document.getElementById('word-container');
       if (wc) { wc.innerHTML = ''; wc.style.display = 'none'; }
+    });
+  }
+  // Attach manual fallback button handler (if present)
+  const gsiManual = document.getElementById('gsi-manual-btn');
+  if (gsiManual) {
+    gsiManual.addEventListener('click', () => {
+      hideGsiFallback();
+      try {
+        if (window.google && window.google.accounts && window.google.accounts.id) {
+          // Try a manual prompt; catch errors and show fallback again
+          tryPromptGoogleOneTap();
+        }
+      } catch (e) {
+        console.warn('manual GSI prompt failed', e);
+        showGsiFallback('手動ログインに失敗しました。ブラウザの設定をご確認ください。');
+      }
     });
   }
 });

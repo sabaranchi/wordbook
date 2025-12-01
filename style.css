@@ -218,6 +218,42 @@ section {
   gap: 0.5em;
 }
 
+/* GSI fallback banner (non-intrusive) */
+#gsi-fallback-banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: 72px;
+  z-index: 1200;
+  background: #fff8e1;
+  color: #6a4f00;
+  border: 1px solid #ffe08a;
+  padding: 10px 12px;
+  border-radius: 6px;
+  display: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  font-size: 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#gsi-fallback-banner.visible { display: flex; }
+
+.gsi-manual-btn {
+  background: #0d6efd;
+  color: #fff;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.gsi-help-link {
+  margin-left: auto;
+  color: #0d6efd;
+  text-decoration: underline;
+}
+
 .label {
   width: 7em;
   flex-shrink: 0;

@@ -6,9 +6,10 @@
   <title>WordBook</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4668977801308895"
+  <!--　<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4668977801308895"
      crossorigin="anonymous">
   </script>
+  -->
 </head>
 <body>  
   <!-- Fixed bottom banner (広告) 
@@ -28,6 +29,13 @@
       <button id="signout-btn" class="signout" style="display:none;">Sign out</button>
     </div>
   </div>
+    
+    <!-- GSI fallback banner: shown when automatic sign-in fails -->
+    <div id="gsi-fallback-banner" role="status" aria-live="polite" style="display:none;">
+      <span id="gsi-fallback-text">自動サインインが利用できません。手動でログインしてください（例: サードパーティCookieがブロックされている可能性があります）。</span>
+      <button id="gsi-manual-btn" class="gsi-manual-btn">手動でログインする</button>
+      <a id="gsi-help-link" class="gsi-help-link" href="https://support.google.com/chrome/answer/95647?hl=ja" target="_blank" rel="noopener">Cookie の許可方法を見る</a>
+    </div>
 
   <div id="progress-bar-container">
     <label>Progress: <span id="progress-text">0%</span></label>
@@ -52,7 +60,7 @@
     <!-- 単語追加フォーム -->
      <form id="add-word-form">
       <input type="text" id="new-word" placeholder="word" required />
-      <textarea id="new-meaning-ja" placeholder="Meaning (type in your own words)" rows="3"></textarea>
+      <textarea id="new-meaning-ja" placeholder="Meaning (type in your native language)" rows="3"></textarea>
       <textarea id="new-meaning" placeholder="Definition" rows="3"></textarea>
       <textarea id="new-example" placeholder="Example" rows="3"></textarea>
       <input type="text" id="new-category" placeholder="Category" />
