@@ -203,7 +203,7 @@ module.exports = async (req, res) => {
         if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
-      const sheetRowIndex = foundIndex + 1; // as expected by updateRow helper
+      const sheetRowIndex = foundIndex + 2; // rows[] is values.slice(1); first data row -> sheet row 2
       const existing = rows[foundIndex];
       // Use batchUpdate to update only the fields provided in params (and always ensure userId col)
       const updates = [];
@@ -250,7 +250,7 @@ module.exports = async (req, res) => {
       // Delete the row by overwriting with empty strings (safe) — Apps Script deleted row physically,
       // physical deletion via Sheets API requires sheetId and batchUpdate; emulate by clearing values here.
       const emptyRow = hdr.map(() => '');
-      const resp = await updateRow(accessToken, foundIndex + 1, emptyRow);
+      const resp = await updateRow(accessToken, foundIndex + 2, emptyRow);
       return res.json({ ok: true, result: resp });
     }
 
