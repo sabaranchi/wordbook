@@ -810,7 +810,8 @@ function deleteWord(index) {
   if (!confirm('この単語を削除しますか？')) return;
   customWords.splice(index, 1);
   useDB('readwrite', store => store.delete(id));
-  callSheetApi('delete', { id, userId }).catch(e => console.warn('delete to Sheets failed', e));
+  // proxy expects `word` parameter for delete
+  callSheetApi('delete', { word: id, userId }).catch(e => console.warn('delete to Sheets failed', e));
   // Better: callSheetApi('delete', { id, userId }).catch(e => console.warn('delete to Sheets failed', e));
 
   // DOMから該当カードを削除（全再描画しない）
