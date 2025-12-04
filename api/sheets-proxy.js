@@ -89,6 +89,35 @@ async function readSheetValues(accessToken) {
   return res.json();
 }
 
+async function getSpreadsheetMetadata(accessToken) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) throw new Error('sheets metadata failed: ' + res.status + ' ' + await res.text());
+  return res.json();
+}
+
+async function deleteSheetRow(accessToken, sheetId, sheetRow) {
+  // sheetRow is 1-based row number in the spreadsheet
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`;
+  const body = {
+    requests: [
+      {
+        deleteDimension: {
+          range: {
+            sheetId: sheetId,
+            dimension: 'ROWS',
+            startIndex: sheetRow - 1,
+            endIndex: sheetRow
+          }
+        }
+      }
+    ]
+  };
+  const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error('sheets deleteRow failed: ' + res.status + ' ' + await res.text());
+  return res.json();
+}
+
 async function appendRow(accessToken, row) {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}!A:Z:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
   const body = { values: [row] };
@@ -100,7 +129,18 @@ async function appendRow(accessToken, row) {
 async function updateRow(accessToken, rowIndex, row) {
   // rowIndex is 1-based excluding header (so actual sheet row = rowIndex + 1)
   const sheetRow = rowIndex + 1; // header is row 1
-  const range = `${SHEET_NAME}!A${sheetRow}:I${sheetRow}`;
+  // compute end column based on row length (A..Z..AA if needed)
+  const colLetter = (n) => {
+    let s = '';
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  };
+  const endCol = colLetter(row.length || 1);
+  const range = `${SHEET_NAME}!A${sheetRow}:${endCol}${sheetRow}`;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
   const body = { values: [row] };
   const res = await fetch(url, { method: 'PUT', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
@@ -132,77 +172,122 @@ module.exports = async (req, res) => {
 
     // header columns expected (configured to match sheet tab column order)
     // Desired order: userId, word, meaning_jp, meaning, example, category, learned, streak, updatedAt
-    const header = ['userId','word','meaning_jp','meaning','example','category','learned','streak','updatedAt'];
+    // We'll read the actual header row from the sheet to respect the real column count.
 
+    // read sheet once for operations so we know header length
+    const sheetData = await readSheetValues(accessToken);
+    const values = (sheetData.values || []);
+    const hdr = values[0] ? values[0].map(h => String(h || '').trim()) : [];
+    // Discover userId/word column indexes from header row (case-insensitive). Fall back to 0/1.
+    const userColIndex = Math.max(0, hdr.findIndex(h => String(h || '').toLowerCase() === 'userid'));
+    const wordColIndex = Math.max(1, hdr.findIndex(h => String(h || '').toLowerCase() === 'word'));
     if (action === 'list') {
-      const data = await readSheetValues(accessToken);
-      const values = (data.values || []);
       if (values.length <= 1) return res.json([]);
-      const hdr = values[0].map(h=>String(h||'').trim());
+      // hdr already defined above
       const rows = values.slice(1).map(r => {
         const obj = {};
         for (let i=0;i<hdr.length;i++) obj[hdr[i]||('col'+i)] = r[i] || '';
         return obj;
       });
-      // filter by userId (case-insensitive)
-      const filtered = rows.filter(r => (String(r.userId||'').trim().toLowerCase()) === String(userId||'').trim().toLowerCase());
+      // filter by userId (case-insensitive) using discovered column name
+      const uidKey = hdr[userColIndex] || 'userId';
+      const filtered = rows.filter(r => (String(r[uidKey]||'').trim().toLowerCase()) === String(userId||'').trim().toLowerCase());
       return res.json(filtered);
     }
 
     if (action === 'add') {
       const params = body;
-      if (!params.word) return res.status(400).json({ error: 'missing word' });
-      const now = new Date().toISOString();
-      // Build row in spreadsheet column order: userId first, then word, ...
-      const row = [userId, params.word, params.meaning_jp||'', params.meaning||'', params.example||'', params.category||'', String(params.learned||''), String(params.streak||0), now];
+      if (!params.word && !params.id) return res.status(400).json({ error: 'missing word' });
+      // Build row aligned to actual headers. Do not auto-set updatedAt; leave empty.
+      const row = hdr.map((h, idx) => {
+        if (!h) return '';
+        const key = String(h);
+        if (idx === userColIndex) return userId;
+        if (key.toLowerCase() === 'updatedat' || key === 'updatedAt') return '';
+        const v = params[key];
+        if (v === null || typeof v === 'undefined') return '';
+        return (typeof v === 'string') ? v : String(v);
+      });
       const resp = await appendRow(accessToken, row);
       return res.json({ ok: true, result: resp });
     }
 
     if (action === 'update') {
       const params = body;
-      if (!params.word) return res.status(400).json({ error: 'missing word' });
-      // read all rows to find row index
-      const data = await readSheetValues(accessToken);
-      const values = (data.values || []);
-      if (values.length <= 1) return res.status(404).json({ error: 'not_found' });
-      const hdr = values[0].map(h=>String(h||'').trim());
-      const rows = values.slice(1);
+      const wordParam = (params.word || params.id || '').toString().trim();
+      if (!wordParam) return res.status(400).json({ error: 'missing word' });
+      const hdr = values[0] ? values[0].map(h=>String(h||'').trim()) : [];
+      const rows = values.slice(1 || 0);
+      if (rows.length === 0) return res.status(404).json({ error: 'not_found' });
       let foundIndex = -1;
       for (let i=0;i<rows.length;i++){
         const row = rows[i];
-        // Spreadsheet order: userId at col 0, word at col 1
         const uid = String(row[0]||'').trim();
         const w = String(row[1]||'').trim();
-        if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
+        if (w === wordParam && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
-      const now = new Date().toISOString();
-      const newRow = [userId, params.word, params.meaning_jp||'', params.meaning||'', params.example||'', params.category||'', String(params.learned||''), String(params.streak||0), now];
-      const resp = await updateRow(accessToken, foundIndex+1, newRow);
-      return res.json({ ok: true, result: resp });
+      const existingRow = rows[foundIndex] || [];
+      // Normalize existingRow length to header length
+      for (let i = 0; i < hdr.length; i++) if (typeof existingRow[i] === 'undefined') existingRow[i] = '';
+      // Merge: keep existing values unless params provides a meaningful (non-empty) value
+      const merged = hdr.map((h, idx) => {
+        const key = String(h || '');
+        const lower = key.toLowerCase();
+        if (!key) return existingRow[idx] || '';
+        // never allow client to set updatedAt
+        if (lower === 'updatedat' || key === 'updatedAt') return existingRow[idx] || '';
+        // user id column forced to server userId
+        if (idx === 0) return userId;
+        if (Object.prototype.hasOwnProperty.call(params, key)) {
+          const v = params[key];
+          if (v === null || typeof v === 'undefined') return existingRow[idx] || '';
+          if (typeof v === 'string') {
+            if (v.trim() === '') return existingRow[idx] || '';
+            return v;
+          }
+          // non-string (number/boolean) -> convert to string
+          return String(v);
+        }
+        return existingRow[idx] || '';
+      });
+      // updateRow expects rowIndex (1-based excluding header) as before
+      const resp = await updateRow(accessToken, foundIndex+1, merged);
+      // return merged row for debugging/verification
+      return res.json({ ok: true, result: resp, writtenRow: merged });
     }
 
     if (action === 'delete') {
       const params = body;
-      if (!params.word) return res.status(400).json({ error: 'missing word' });
-      // read all rows to find row
-      const data = await readSheetValues(accessToken);
-      const values = (data.values || []);
-      if (values.length <= 1) return res.status(404).json({ error: 'not_found' });
-      const rows = values.slice(1);
+      const wordParam = (params.word || params.id || '').toString().trim();
+      if (!wordParam) return res.status(400).json({ error: 'missing word' });
+      const hdr = values[0] ? values[0].map(h=>String(h||'').trim()) : [];
+      const rows = values.slice(1 || 0);
       let foundIndex = -1;
       for (let i=0;i<rows.length;i++){
         const row = rows[i];
         const uid = String(row[0]||'').trim();
         const w = String(row[1]||'').trim();
-        if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
+        if (w === wordParam && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
-      // Overwrite the row with empty strings to simulate deletion
-      const emptyRow = ['', '', '', '', '', '', '', '', ''];
-      const resp = await updateRow(accessToken, foundIndex+1, emptyRow);
-      return res.json({ ok: true, result: resp });
+      // Prefer physical row deletion so indexes remain compact and matches Apps Script behavior
+      try {
+        const meta = await getSpreadsheetMetadata(accessToken);
+        const sheets = (meta.sheets || []).map(s => s.properties || {});
+        const sheetProp = sheets.find(s => s.title === SHEET_NAME) || sheets[0] || {};
+        const sheetId = sheetProp.sheetId;
+        const sheetRow = foundIndex + 2; // foundIndex=0 -> sheet row 2 (header is row 1)
+        if (typeof sheetId !== 'undefined') {
+          const delResp = await deleteSheetRow(accessToken, sheetId, sheetRow);
+            return res.json({ ok: true, result: delResp, deletedRow: sheetRow, sheetId });
+        }
+      } catch (err) {
+        // fallback: clear the row if physical delete fails
+        const emptyRow = new Array(hdr.length || 1).fill('');
+        const resp = await updateRow(accessToken, foundIndex+1, emptyRow);
+          return res.json({ ok: true, result: resp, fallback: 'cleared_row', clearedRowIndex: foundIndex+1 });
+      }
     }
 
     return res.status(400).json({ error: 'unknown_action' });
