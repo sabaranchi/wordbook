@@ -19,6 +19,18 @@ function base64url(input) {
   return Buffer.from(input).toString('base64').replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
 }
 
+// Convert zero-based column index to A1 column letter (0 -> A, 25 -> Z, 26 -> AA)
+function columnLetter(idx) {
+  let s = '';
+  let n = idx + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
 function signJwtRS256(unsigned, privateKey) {
   const sign = crypto.createSign('RSA-SHA256');
   sign.update(unsigned);
@@ -97,20 +109,19 @@ async function appendRow(accessToken, row) {
   return res.json();
 }
 
+async function batchUpdateValues(accessToken, updates) {
+  // updates: [{ range: 'Sheet!A2', values: [['val']] }, ...]
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchUpdate`;
+  const body = { valueInputOption: 'RAW', data: updates };
+  const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error('sheets batchUpdate failed: ' + res.status + ' ' + await res.text());
+  return res.json();
+}
+
 async function updateRow(accessToken, rowIndex, row) {
   // rowIndex is 1-based excluding header (so actual sheet row = rowIndex + 1)
   const sheetRow = rowIndex + 1; // header is row 1
   // compute end column from row length (supports up to many columns)
-  function columnLetter(idx) {
-    let s = '';
-    let n = idx + 1;
-    while (n > 0) {
-      const rem = (n - 1) % 26;
-      s = String.fromCharCode(65 + rem) + s;
-      n = Math.floor((n - 1) / 26);
-    }
-    return s;
-  }
   const endCol = columnLetter(row.length - 1);
   const range = `${SHEET_NAME}!A${sheetRow}:${endCol}${sheetRow}`;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
@@ -169,11 +180,10 @@ module.exports = async (req, res) => {
       if (!params.word) return res.status(400).json({ error: 'missing word' });
       if (hdr.length === 0) return res.status(500).json({ error: 'empty_sheet_headers' });
       // Build row in sheet header order
-      const now = new Date().toISOString();
-      const row = hdr.map(h => {
+      const row = hdr.map((h, idx) => {
         if (!h) return '';
-        if (hdr.indexOf(h) === effectiveUserCol) return userId; // always write verified userId/email
-        if (String(h).toLowerCase() === 'updatedat') return now;
+        if (idx === effectiveUserCol) return userId; // always write verified userId/email
+        // Do NOT auto-populate updatedAt; leave empty if client didn't provide
         return params[h] !== undefined ? params[h] : '';
       });
       const resp = await appendRow(accessToken, row);
@@ -194,18 +204,33 @@ module.exports = async (req, res) => {
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
       const sheetRowIndex = foundIndex + 1; // as expected by updateRow helper
-      // build newRow by taking existing row and overwriting only fields present in params
       const existing = rows[foundIndex];
-      const newRow = hdr.map((h, j) => {
-        if (!h) return existing[j] || '';
-        if (j === effectiveUserCol) return userId; // always ensure userId column is the authed user
-        if (Object.prototype.hasOwnProperty.call(params, h)) return params[h];
-        return existing[j] !== undefined ? existing[j] : '';
-      });
-      // ensure updatedAt column updated if present
-      const updatedAtIndex = hdr.findIndex(h => String(h || '').toLowerCase() === 'updatedat');
-      if (updatedAtIndex >= 0) newRow[updatedAtIndex] = new Date().toISOString();
-      const resp = await updateRow(accessToken, sheetRowIndex, newRow);
+      // Use batchUpdate to update only the fields provided in params (and always ensure userId col)
+      const updates = [];
+      for (let j = 0; j < hdr.length; j++) {
+        const h = hdr[j];
+        if (!h) continue;
+        // Always ensure userId column matches authenticated user
+        if (j === effectiveUserCol) {
+          const colLetter = columnLetter(j);
+          updates.push({ range: `${SHEET_NAME}!${colLetter}${sheetRowIndex}`, values: [[userId]] });
+          continue;
+        }
+        // Skip updatedAt automatic writes: only update if client explicitly included field
+        if (String(h || '').toLowerCase() === 'updatedat') {
+          if (Object.prototype.hasOwnProperty.call(params, h)) {
+            const colLetter = columnLetter(j);
+            updates.push({ range: `${SHEET_NAME}!${colLetter}${sheetRowIndex}`, values: [[params[h]]] });
+          }
+          continue;
+        }
+        if (Object.prototype.hasOwnProperty.call(params, h)) {
+          const colLetter = columnLetter(j);
+          updates.push({ range: `${SHEET_NAME}!${colLetter}${sheetRowIndex}`, values: [[params[h] !== undefined ? params[h] : '']] });
+        }
+      }
+      if (updates.length === 0) return res.json({ ok: true, result: 'no_changes' });
+      const resp = await batchUpdateValues(accessToken, updates);
       return res.json({ ok: true, result: resp });
     }
 
