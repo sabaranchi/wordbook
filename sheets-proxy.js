@@ -192,7 +192,8 @@ module.exports = async (req, res) => {
 
     if (action === 'update') {
       const params = body;
-      if (!params.word) return res.status(400).json({ error: 'missing word' });
+      const targetWord = params.word || params.id || params._id || '';
+      if (!targetWord) return res.status(400).json({ error: 'missing word' });
       if (values.length <= 1) return res.status(404).json({ error: 'not_found' });
       const rows = values.slice(1);
       let foundIndex = -1;
@@ -200,10 +201,10 @@ module.exports = async (req, res) => {
         const row = rows[i];
         const uid = String(row[effectiveUserCol] || '').trim();
         const w = String(row[effectiveWordCol] || '').trim();
-        if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
+        if (w === String(targetWord).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
-      const sheetRowIndex = foundIndex + 2; // rows[] is values.slice(1); first data row -> sheet row 2
+      const sheetRowIndex = foundIndex + 1; // rows[] is values.slice(1); first data row -> sheet row 2 -> updateRow expects rowIndex=1
       const existing = rows[foundIndex];
       // Use batchUpdate to update only the fields provided in params (and always ensure userId col)
       const updates = [];
@@ -236,7 +237,8 @@ module.exports = async (req, res) => {
 
     if (action === 'delete') {
       const params = body;
-      if (!params.word) return res.status(400).json({ error: 'missing word' });
+      const targetWord = params.word || params.id || params._id || '';
+      if (!targetWord) return res.status(400).json({ error: 'missing word' });
       if (values.length <= 1) return res.status(404).json({ error: 'not_found' });
       const rows = values.slice(1);
       let foundIndex = -1;
@@ -244,13 +246,13 @@ module.exports = async (req, res) => {
         const row = rows[i];
         const uid = String(row[effectiveUserCol] || '').trim();
         const w = String(row[effectiveWordCol] || '').trim();
-        if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
+        if (w === String(targetWord).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
       // Delete the row by overwriting with empty strings (safe) — Apps Script deleted row physically,
       // physical deletion via Sheets API requires sheetId and batchUpdate; emulate by clearing values here.
       const emptyRow = hdr.map(() => '');
-      const resp = await updateRow(accessToken, foundIndex + 2, emptyRow);
+      const resp = await updateRow(accessToken, foundIndex + 1, emptyRow);
       return res.json({ ok: true, result: resp });
     }
 
