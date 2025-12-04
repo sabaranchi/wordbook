@@ -1428,7 +1428,8 @@ async function enrichWordFromDictionary(index) {
       console.log('callSheetApi update response:', resp);
       // Determine success in several server response styles
       let updated = false;
-      if (resp && typeof resp === 'object' && resp.success) updated = true;
+      if (resp && typeof resp === 'object' && (resp.success || resp.ok || (resp.result && resp.result.ok))) updated = true;
+      if (typeof resp === 'object' && resp && Object.keys(resp).length === 0) updated = false;
       if (typeof resp === 'string' && /updated|added|ok|success/i.test(resp)) updated = true;
 
       if (updated) {
@@ -1442,7 +1443,7 @@ async function enrichWordFromDictionary(index) {
         const addResp = await callSheetApi('add', { word: wordObj.word, meaning_jp: wordObj.meaning_jp || '', meaning: wordObj.meaning || '', example: wordObj.example || '', category: wordObj.category || '', userId: wordObj.userId });
         console.log('callSheetApi add response:', addResp);
         let added = false;
-        if (addResp && typeof addResp === 'object' && addResp.success) added = true;
+        if (addResp && typeof addResp === 'object' && (addResp.success || addResp.ok || (addResp.result && addResp.result.ok))) added = true;
         if (typeof addResp === 'string' && /added|ok|success/i.test(addResp)) added = true;
         if (added) {
           // reflect in UI
