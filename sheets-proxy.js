@@ -19,18 +19,6 @@ function base64url(input) {
   return Buffer.from(input).toString('base64').replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
 }
 
-// Convert zero-based column index to A1 column letter (0 -> A, 25 -> Z, 26 -> AA)
-function columnLetter(idx) {
-  let s = '';
-  let n = idx + 1;
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    s = String.fromCharCode(65 + rem) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
-}
-
 function signJwtRS256(unsigned, privateKey) {
   const sign = crypto.createSign('RSA-SHA256');
   sign.update(unsigned);
@@ -109,20 +97,20 @@ async function appendRow(accessToken, row) {
   return res.json();
 }
 
-async function batchUpdateValues(accessToken, updates) {
-  // updates: [{ range: 'Sheet!A2', values: [['val']] }, ...]
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchUpdate`;
-  const body = { valueInputOption: 'RAW', data: updates };
-  const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error('sheets batchUpdate failed: ' + res.status + ' ' + await res.text());
-  return res.json();
-}
-
 async function updateRow(accessToken, rowIndex, row) {
   // rowIndex is 1-based excluding header (so actual sheet row = rowIndex + 1)
   const sheetRow = rowIndex + 1; // header is row 1
-  // compute end column from row length (supports up to many columns)
-  const endCol = columnLetter(row.length - 1);
+  // compute end column based on row length (A..Z..AA if needed)
+  const colLetter = (n) => {
+    let s = '';
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  };
+  const endCol = colLetter(row.length || 1);
   const range = `${SHEET_NAME}!A${sheetRow}:${endCol}${sheetRow}`;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
   const body = { values: [row] };
@@ -153,38 +141,37 @@ module.exports = async (req, res) => {
     const action = body.action;
     if (!action) return res.status(400).json({ error: 'missing_action' });
 
-    // Read current sheet values to get header row dynamically
+    // header columns expected (configured to match sheet tab column order)
+    // Desired order: userId, word, meaning_jp, meaning, example, category, learned, streak, updatedAt
+    // We'll read the actual header row from the sheet to respect the real column count.
+
+    // read sheet once for operations so we know header length
     const sheetData = await readSheetValues(accessToken);
     const values = (sheetData.values || []);
-    const hdr = values.length > 0 ? values[0].map(h => String(h || '').trim()) : [];
-    // helper to locate user/word columns (fallback to 0/1)
-    const userColIndex = hdr.findIndex(h => String(h || '').toLowerCase() === 'userid' || String(h || '').toLowerCase() === 'user' || String(h || '').toLowerCase() === 'email');
-    const wordColIndex = hdr.findIndex(h => String(h || '').toLowerCase() === 'word');
-    const effectiveUserCol = userColIndex >= 0 ? userColIndex : 0;
-    const effectiveWordCol = wordColIndex >= 0 ? wordColIndex : 1;
-
     if (action === 'list') {
       if (values.length <= 1) return res.json([]);
+      const hdr = values[0].map(h=>String(h||'').trim());
       const rows = values.slice(1).map(r => {
         const obj = {};
-        for (let i = 0; i < hdr.length; i++) obj[hdr[i] || ('col' + i)] = r[i] || '';
+        for (let i=0;i<hdr.length;i++) obj[hdr[i]||('col'+i)] = r[i] || '';
         return obj;
       });
       // filter by userId (case-insensitive)
-      const filtered = rows.filter(r => (String(r[hdr[effectiveUserCol]] || '').trim().toLowerCase()) === String(userId || '').trim().toLowerCase());
+      const filtered = rows.filter(r => (String(r.userId||'').trim().toLowerCase()) === String(userId||'').trim().toLowerCase());
       return res.json(filtered);
     }
 
     if (action === 'add') {
       const params = body;
       if (!params.word) return res.status(400).json({ error: 'missing word' });
-      if (hdr.length === 0) return res.status(500).json({ error: 'empty_sheet_headers' });
-      // Build row in sheet header order
-      const row = hdr.map((h, idx) => {
+      const hdr = values[0] ? values[0].map(h=>String(h||'').trim()) : [];
+      // Build row aligned to actual headers. Do not auto-set updatedAt; leave empty.
+      const row = hdr.map(h => {
         if (!h) return '';
-        if (idx === effectiveUserCol) return userId; // always write verified userId/email
-        // Do NOT auto-populate updatedAt; leave empty if client didn't provide
-        return params[h] !== undefined ? params[h] : '';
+        const key = String(h);
+        if (key.toLowerCase() === 'userid' || key === hdr[0]) return userId;
+        if (key.toLowerCase() === 'updatedat' || key === 'updatedAt') return '';
+        return params[key] !== undefined ? params[key] : '';
       });
       const resp = await appendRow(accessToken, row);
       return res.json({ ok: true, result: resp });
@@ -192,67 +179,62 @@ module.exports = async (req, res) => {
 
     if (action === 'update') {
       const params = body;
-      const targetWord = params.word || params.id || params._id || '';
-      if (!targetWord) return res.status(400).json({ error: 'missing word' });
-      if (values.length <= 1) return res.status(404).json({ error: 'not_found' });
-      const rows = values.slice(1);
+      if (!params.word) return res.status(400).json({ error: 'missing word' });
+      const hdr = values[0] ? values[0].map(h=>String(h||'').trim()) : [];
+      const rows = values.slice(1 || 0);
+      if (rows.length === 0) return res.status(404).json({ error: 'not_found' });
       let foundIndex = -1;
-      for (let i = 0; i < rows.length; i++) {
+      for (let i=0;i<rows.length;i++){
         const row = rows[i];
-        const uid = String(row[effectiveUserCol] || '').trim();
-        const w = String(row[effectiveWordCol] || '').trim();
-        if (w === String(targetWord).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
+        const uid = String(row[0]||'').trim();
+        const w = String(row[1]||'').trim();
+        if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
-      const sheetRowIndex = foundIndex + 1; // rows[] is values.slice(1); first data row -> sheet row 2 -> updateRow expects rowIndex=1
-      const existing = rows[foundIndex];
-      // Use batchUpdate to update only the fields provided in params (and always ensure userId col)
-      const updates = [];
-      for (let j = 0; j < hdr.length; j++) {
-        const h = hdr[j];
-        if (!h) continue;
-        // Always ensure userId column matches authenticated user
-        if (j === effectiveUserCol) {
-          const colLetter = columnLetter(j);
-          updates.push({ range: `${SHEET_NAME}!${colLetter}${sheetRowIndex}`, values: [[userId]] });
-          continue;
-        }
-        // Skip updatedAt automatic writes: only update if client explicitly included field
-        if (String(h || '').toLowerCase() === 'updatedat') {
-          if (Object.prototype.hasOwnProperty.call(params, h)) {
-            const colLetter = columnLetter(j);
-            updates.push({ range: `${SHEET_NAME}!${colLetter}${sheetRowIndex}`, values: [[params[h]]] });
+      const existingRow = rows[foundIndex] || [];
+      // Merge: keep existing values unless param provides a non-empty value for that header
+      const merged = hdr.map((h, idx) => {
+        const key = String(h || '');
+        const lower = key.toLowerCase();
+        // never allow client to set updatedAt
+        if (lower === 'updatedat' || key === 'updatedAt') return existingRow[idx] || '';
+        // user id column forced to server userId
+        if (idx === 0) return userId;
+        // if client supplied this field and it's non-empty, use it
+        if (Object.prototype.hasOwnProperty.call(params, key)) {
+          const v = params[key];
+          if (v !== null && typeof v !== 'undefined') {
+            if (typeof v === 'string') {
+              if (v.trim() !== '') return v;
+              // empty string -> treat as no-change
+              return existingRow[idx] || '';
+            }
+            return v;
           }
-          continue;
+          return existingRow[idx] || '';
         }
-        if (Object.prototype.hasOwnProperty.call(params, h)) {
-          const colLetter = columnLetter(j);
-          updates.push({ range: `${SHEET_NAME}!${colLetter}${sheetRowIndex}`, values: [[params[h] !== undefined ? params[h] : '']] });
-        }
-      }
-      if (updates.length === 0) return res.json({ ok: true, result: 'no_changes' });
-      const resp = await batchUpdateValues(accessToken, updates);
+        return existingRow[idx] || '';
+      });
+      const resp = await updateRow(accessToken, foundIndex+1, merged);
       return res.json({ ok: true, result: resp });
     }
 
     if (action === 'delete') {
       const params = body;
-      const targetWord = params.word || params.id || params._id || '';
-      if (!targetWord) return res.status(400).json({ error: 'missing word' });
-      if (values.length <= 1) return res.status(404).json({ error: 'not_found' });
-      const rows = values.slice(1);
+      if (!params.word) return res.status(400).json({ error: 'missing word' });
+      const hdr = values[0] ? values[0].map(h=>String(h||'').trim()) : [];
+      const rows = values.slice(1 || 0);
       let foundIndex = -1;
-      for (let i = 0; i < rows.length; i++) {
+      for (let i=0;i<rows.length;i++){
         const row = rows[i];
-        const uid = String(row[effectiveUserCol] || '').trim();
-        const w = String(row[effectiveWordCol] || '').trim();
-        if (w === String(targetWord).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
+        const uid = String(row[0]||'').trim();
+        const w = String(row[1]||'').trim();
+        if (w === String(params.word).trim() && uid.toLowerCase() === String(userId).toLowerCase()) { foundIndex = i; break; }
       }
       if (foundIndex === -1) return res.status(404).json({ error: 'not_found' });
-      // Delete the row by overwriting with empty strings (safe) — Apps Script deleted row physically,
-      // physical deletion via Sheets API requires sheetId and batchUpdate; emulate by clearing values here.
-      const emptyRow = hdr.map(() => '');
-      const resp = await updateRow(accessToken, foundIndex + 1, emptyRow);
+      // clear the entire row by writing empty strings for the actual header length
+      const emptyRow = new Array(hdr.length || 1).fill('');
+      const resp = await updateRow(accessToken, foundIndex+1, emptyRow);
       return res.json({ ok: true, result: resp });
     }
 
