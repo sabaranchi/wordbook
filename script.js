@@ -143,16 +143,40 @@ function handleCredentialResponse(resp) {
     const so = document.getElementById('signout-btn'); if (so) so.style.display = 'inline-block';
 
     // Create server-side session so the browser keeps login across restarts
-    try {
-      fetch('/api/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ id_token: currentIdToken })
-      }).then(r => r.json()).then(j => {
-        console.log('session create response', j);
-      }).catch(e => console.warn('session create failed', e));
-    } catch (e) { console.warn('session create threw', e); }
+    (async () => {
+      try {
+        const sessionResp = await fetch('/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ id_token: currentIdToken })
+        });
+        const sessionData = await sessionResp.json();
+        console.log('session create response', sessionData);
+        
+        // 📱 スマホ対策: Cookie がブロックされた場合の検出
+        if (sessionData && sessionData.ok) {
+          // セッション作成成功 → 次のリクエストで Cookie が送られるか確認
+          setTimeout(async () => {
+            try {
+              const checkResp = await fetch('/api/session', { method: 'GET', credentials: 'include' });
+              const checkData = await checkResp.json();
+              if (!checkData.loggedIn) {
+                console.warn('⚠️ Session cookie blocked! Falling back to id_token mode');
+                sessionStorage.setItem('cookie_blocked', 'true');
+              } else {
+                console.log('✅ Session cookie works');
+                sessionStorage.removeItem('cookie_blocked');
+              }
+            } catch (e) {
+              console.warn('Session check failed', e);
+            }
+          }, 500);
+        }
+      } catch (e) { 
+        console.warn('session create threw', e); 
+      }
+    })();
 
     // Hybrid flow: first render local cache (fast), then fetch server list in background and sync
     readLocalAll().then(localRows => {
@@ -298,16 +322,29 @@ async function callSheetApi(action, params = {}) {
   try {
     // If using server proxy (local path), send JSON and include credentials (cookie)
     if (SHEET_API_URL.startsWith('/api/')) {
+      const cookieBlocked = sessionStorage.getItem('cookie_blocked') === 'true';
+      const headers = { 'Content-Type': 'application/json' };
+      
+      // 📱 Cookie がブロックされている場合は Authorization ヘッダーで id_token を送る
+      if (cookieBlocked && currentIdToken) {
+        headers['Authorization'] = `Bearer ${currentIdToken}`;
+        console.log('[callSheetApi] Using Bearer token (cookie blocked)');
+      }
+      
       const res = await fetch(SHEET_API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
         body: JSON.stringify(Object.assign({ action }, params))
       });
       const text = await res.text();
       if (!res.ok) {
         console.error('callSheetApi HTTP error', res.status, text);
-        if (res.status === 401 || res.status === 403) showGsiFallback('認証エラー: 再度ログインしてください。');
+        if (res.status === 401 || res.status === 403) {
+          // 📱 認証エラーの場合、Cookie確認を促す
+          console.warn('Authentication failed. Cookie blocked?', sessionStorage.getItem('cookie_blocked'));
+          showGsiFallback('認証エラー: ブラウザの設定で Cookie がブロックされている可能性があります。');
+        }
         try { return JSON.parse(text); } catch (e) { return text; }
       }
       try { return JSON.parse(text); } catch (e) { return text; }

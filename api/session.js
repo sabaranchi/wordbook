@@ -47,7 +47,7 @@ function setCookie(res, name, value, opts = {}) {
 }
 
 function clearCookie(res, name) {
-  res.setHeader('Set-Cookie', `${name}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`);
+  res.setHeader('Set-Cookie', `${name}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None`);
 }
 
 module.exports = async (req, res) => {
@@ -83,7 +83,7 @@ module.exports = async (req, res) => {
         maxAge: SESSION_MAX_AGE,
         httpOnly: true,
         secure: true,
-        sameSite: 'Lax',
+        sameSite: 'None', // ← Lax → None に変更（モバイル対応）
         path: '/'
       });
 

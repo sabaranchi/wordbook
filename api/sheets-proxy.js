@@ -155,10 +155,30 @@ module.exports = async (req, res) => {
     if (!sa || !sa.private_key) return res.status(500).json({ error: 'invalid service account key' });
     if (!SPREADSHEET_ID) return res.status(500).json({ error: 'SPREADSHEET_ID not set' });
 
-    // verify session cookie
+    // verify session cookie OR Authorization Bearer token (fallback for mobile)
+    let userId = null;
     const session = verifySessionFromCookie(req);
-    if (!session || !session.userId) return res.status(401).json({ error: 'not_authenticated' });
-    const userId = session.userId;
+    if (session && session.userId) {
+      userId = session.userId;
+    } else {
+      // 📱 Fallback: Check Authorization header for Bearer token (id_token)
+      const authHeader = req.headers.authorization || '';
+      if (authHeader.startsWith('Bearer ')) {
+        const idToken = authHeader.substring(7);
+        try {
+          const tokenInfoUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+          const resp = await fetch(tokenInfoUrl);
+          if (resp.ok) {
+            const payload = await resp.json();
+            userId = payload.email || payload.sub;
+          }
+        } catch (e) {
+          console.warn('Bearer token verification failed', e);
+        }
+      }
+    }
+    
+    if (!userId) return res.status(401).json({ error: 'not_authenticated' });
 
     // obtain access_token
     const tokenResp = await getAccessToken(sa);
