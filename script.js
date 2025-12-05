@@ -484,6 +484,104 @@ window.addEventListener('DOMContentLoaded', () => {
   console.log('init: g_id_button element', !!gbtn);
   initGoogleIdentity();
 
+  // ============================================================
+  // イベント委譲：全カードのイベントを container 1つで処理
+  // ============================================================
+  const container = document.getElementById('word-container');
+  
+  // クリックイベント（ボタン類）
+  container.addEventListener('click', (e) => {
+    const card = e.target.closest('.word-card');
+    if (!card) return;
+    const wordId = card.dataset.word;
+    const idx = customWords.findIndex(w => w.word === wordId);
+
+    // 削除ボタン
+    if (e.target.matches('.delete-btn')) {
+      if (idx !== -1) deleteWord(idx);
+      return;
+    }
+
+    // 音声再生ボタン
+    if (e.target.matches('.play-btn')) {
+      const word = customWords.find(w => w.word === wordId);
+      if (word) speak(String(word.word));
+      return;
+    }
+
+    // Show Meaning ボタン
+    if (e.target.matches('.show-meaning-btn')) {
+      const meaning = card.querySelector('.meaning');
+      if (meaning) {
+        meaning.style.display = 'block';
+        e.target.style.display = 'none';
+      }
+      return;
+    }
+
+    // Auto Fill ボタン
+    if (e.target.matches('.auto-fill-btn')) {
+      if (idx !== -1) {
+        const btn = e.target;
+        btn.disabled = true;
+        btn.textContent = '取得中...';
+        btn.style.opacity = '0.5';
+        btn.style.pointerEvents = 'none';
+        enrichWordFromDictionary(idx);
+      }
+      return;
+    }
+  });
+
+  // フォーカスアウトイベント（contenteditable の編集保存）
+  container.addEventListener('focusout', (e) => {
+    const card = e.target.closest('.word-card');
+    if (!card) return;
+    const wordId = card.dataset.word;
+    const idx = customWords.findIndex(w => w.word === wordId);
+    if (idx === -1) return;
+
+    // 単語（h2）の編集
+    if (e.target.matches('h2[contenteditable]')) {
+      editWord(idx, 'word', e.target.textContent || '');
+      return;
+    }
+
+    // Meaning (JP) の編集
+    if (e.target.matches('.meaning_jp')) {
+      editWord(idx, 'meaning_jp', e.target.innerHTML || e.target.textContent || '');
+      return;
+    }
+
+    // Definition (EN) の編集
+    if (e.target.matches('.meaning_en')) {
+      editWord(idx, 'meaning', e.target.innerHTML || e.target.textContent || '');
+      return;
+    }
+
+    // Example の編集
+    if (e.target.matches('.example')) {
+      editWord(idx, 'example', e.target.innerHTML || e.target.textContent || '');
+      return;
+    }
+
+    // Category の編集
+    if (e.target.matches('.category')) {
+      editWord(idx, 'category', e.target.innerHTML || e.target.textContent || '');
+      return;
+    }
+  });
+
+  // チェンジイベント（学習チェックボックス）
+  container.addEventListener('change', (e) => {
+    if (e.target.matches('.learned-checkbox')) {
+      const card = e.target.closest('.word-card');
+      if (!card) return;
+      const wordId = card.dataset.word;
+      toggleLearned(wordId, e.target.checked);
+    }
+  });
+
   // Try to restore server-side session (cookie). If present, use it to set UI.
   (async function tryRestore() {
     try {
@@ -894,67 +992,7 @@ function renderCard(word, actualIndex) {
     <button class="auto-fill-btn">Auto Fill</button>
   `;
 
-  // イベント割当（既存の editWord(index, field, value) を使う）
-  const h2 = card.querySelector('h2');
-  if (h2) {
-    h2.addEventListener('blur', () => {
-      const idx = customWords.findIndex(w => w.word === word.word);
-      editWord(idx, 'word', h2.textContent || '');
-    });
-  }
-
-  const playBtn = card.querySelector('.play-btn');
-  if (playBtn) playBtn.addEventListener('click', () => speak(String(word.word)));
-
-  const showBtn = card.querySelector('.show-meaning-btn');
-  const meaningP = card.querySelector('.meaning');
-  if (showBtn && meaningP) {
-    showBtn.addEventListener('click', () => {
-      meaningP.style.display = 'block';
-      showBtn.style.display = 'none';
-    });
-  }
-
-  // contenteditable fields
-  const mapField = { 'meaning_jp': '.meaning_jp', 'meaning': '.meaning_en', 'example': '.example', 'category': '.category' };
-  Object.keys(mapField).forEach(field => {
-    const el = card.querySelector(mapField[field]);
-    if (el) {
-      el.addEventListener('blur', () => {
-        const idx = customWords.findIndex(w => w.word === word.word);
-        editWord(idx, field, el.innerHTML || el.textContent || '');
-      });
-    }
-  });
-
-  const chk = card.querySelector('.learned-checkbox');
-  if (chk) {
-    chk.addEventListener('change', () => toggleLearned(word.word, chk.checked));
-  }
-
-  const delBtn = card.querySelector('.delete-btn');
-  if (delBtn) {
-    delBtn.addEventListener('click', () => {
-      const idx = customWords.findIndex(w => w.word === word.word);
-      if (idx !== -1) deleteWord(idx);
-    });
-  }
-
-  const autoBtn = card.querySelector('.auto-fill-btn');
-  if (autoBtn) {
-    autoBtn.addEventListener('click', () => {
-      const idx = customWords.findIndex(w => w.word === word.word);
-      if (idx !== -1) {
-        // 押下フィードバック & 連打防止
-        autoBtn.disabled = true;
-        autoBtn.textContent = '取得中...';
-        autoBtn.style.opacity = '0.5';
-        autoBtn.style.pointerEvents = 'none';
-        enrichWordFromDictionary(idx);
-      }
-    });
-  }
-
+  // イベントリスナーは container に委譲（個別登録なし）
   return card;
 }
 
