@@ -1,1 +1,1 @@
-https://sabaranchi.github.io/wordbook/
+https://wordbook-rosy.vercel.app/
