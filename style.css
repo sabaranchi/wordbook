@@ -264,3 +264,59 @@ section {
   flex-grow: 1;
   min-width: 0; /* ✅ これが重要！スクロール領域の幅制限を防ぐ */
 }
+
+/* 📱 Mobile 対策 */
+@media (max-width: 768px) {
+  body {
+    padding: 0.5rem 0.5rem calc(var(--bottom-banner-height) + 0.5rem) 0.5rem;
+  }
+
+  .word-card {
+    padding: 0.75rem;
+    margin: 0.75rem 0;
+  }
+
+  .word-header h2 {
+    font-size: 1.4rem;
+  }
+
+  button {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+  }
+
+  nav {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  #filter-controls {
+    gap: 0.3rem;
+    flex-wrap: wrap;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .user-area {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* ✅ スマホで word-container が必ず表示されるように */
+  #word-container {
+    min-height: 50vh;
+    width: 100%;
+  }
+
+  #loading {
+    min-height: 50vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+  }
+}

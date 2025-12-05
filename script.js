@@ -488,6 +488,11 @@ window.addEventListener('DOMContentLoaded', () => {
   // イベント委譲：全カードのイベントを container 1つで処理
   // ============================================================
   const container = document.getElementById('word-container');
+  if (!container) {
+    console.error('[Init] word-container not found!');
+    return;
+  }
+  console.log('[Init] Setting up event delegation on word-container');
   
   // クリックイベント（ボタン類）
   container.addEventListener('click', (e) => {
@@ -664,6 +669,10 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!restoredLocal) {
       document.getElementById('loading').style.display = 'none';
       document.getElementById('word-container').style.display = 'none';
+      // 📱 スマホデバッグ用: ログイン状態を画面に表示
+      console.log('[Init] Not logged in. Please sign in with Google.');
+    } else {
+      console.log('[Init] Session restored from sessionStorage');
     }
   })();
 
@@ -997,10 +1006,18 @@ function renderCard(word, actualIndex) {
 }
 
 function renderWords(words = customWords) {
+  console.log('[renderWords] Called with', words.length, 'words');
   const container = document.getElementById('word-container');
   container.innerHTML = '';
 
   const myWords = words.filter(w => w.userId === userId); // ← 自分の単語だけ表示
+  console.log('[renderWords] myWords filtered:', myWords.length, 'userId:', userId);
+
+  // ✅ スマホ対策: 単語がある場合は必ず表示
+  if (myWords.length > 0) {
+    container.style.display = 'block';
+    document.getElementById('loading').style.display = 'none';
+  }
 
   const batchSize = 10;
   let index = 0;
@@ -1018,6 +1035,7 @@ function renderWords(words = customWords) {
       setTimeout(renderBatch, 50);
     } else {
       updateProgressBar();
+      console.log('[renderWords] Completed:', myWords.length, 'cards rendered');
     }
   }
 
