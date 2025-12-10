@@ -1039,47 +1039,87 @@ function renderCard(word, actualIndex) {
   `;
 
   // イベントリスナーは container に委譲（個別登録なし）
-  return card;
-}
-
-function renderWords(words = customWords) {
-  console.log('[renderWords] Called with', words.length, 'words');
-  const container = document.getElementById('word-container');
-  container.innerHTML = '';
-
-  const myWords = words.filter(w => w.userId === userId); // ← 自分の単語だけ表示
-  console.log('[renderWords] myWords filtered:', myWords.length, 'userId:', userId);
-
-  // ✅ スマホ対策: 単語がある場合は必ず表示
-  if (myWords.length > 0) {
-    container.style.display = 'block';
-    document.getElementById('loading').style.display = 'none';
+    return card;
   }
 
-  const batchSize = 10;
-  let index = 0;
+  // --- Virtual list helpers ---
+  let cardCache = new Map(); // word -> card DOM
+  let virtualState = null;   // { words, itemHeight, topSpacer, bottomSpacer, host }
 
-  function renderBatch() {
-    const slice = myWords.slice(index, index + batchSize);
-    slice.forEach((word, i) => {
-      const actualIndex = customWords.findIndex(w => w.word === word.word);
-      const card = renderCard(word, actualIndex);
-      container.appendChild(card);
-    });
+  function ensureCard(wordObj) {
+    const key = wordObj.word;
+    if (cardCache.has(key)) return cardCache.get(key);
+    const actualIndex = customWords.findIndex(w => w.word === wordObj.word);
+    const card = renderCard(wordObj, actualIndex);
+    cardCache.set(key, card);
+    return card;
+  }
 
-    index += batchSize;
-    if (index < myWords.length) {
-      setTimeout(renderBatch, 50);
-    } else {
-      updateProgressBar();
-      console.log('[renderWords] Completed:', myWords.length, 'cards rendered');
+  function mountVirtualList(words) {
+    const container = document.getElementById('word-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+    container.style.position = 'relative';
+    const topSpacer = document.createElement('div');
+    const host = document.createElement('div');
+    const bottomSpacer = document.createElement('div');
+    host.style.position = 'relative';
+    container.appendChild(topSpacer);
+    container.appendChild(host);
+    container.appendChild(bottomSpacer);
+
+    // item height estimate
+    let itemHeight = 180;
+    if (words.length > 0) {
+      const firstCard = ensureCard(words[0]);
+      host.appendChild(firstCard);
+      itemHeight = Math.max(120, firstCard.getBoundingClientRect().height || 180);
     }
+
+    virtualState = { words, itemHeight, topSpacer, bottomSpacer, host, start: 0, end: 0 };
+    const buffer = 5;
+    const visibleCount = 24;
+
+    function renderSlice() {
+      if (!virtualState) return;
+      const { words, itemHeight, topSpacer, bottomSpacer, host } = virtualState;
+      const scrollY = container.scrollTop;
+      const start = Math.max(0, Math.floor(scrollY / itemHeight) - buffer);
+      const end = Math.min(words.length, start + visibleCount + buffer * 2);
+      virtualState.start = start;
+      virtualState.end = end;
+
+      topSpacer.style.height = `${start * itemHeight}px`;
+      bottomSpacer.style.height = `${Math.max(0, (words.length - end) * itemHeight)}px`;
+
+      host.innerHTML = '';
+      for (let i = start; i < end; i++) {
+        const card = ensureCard(words[i]);
+        host.appendChild(card);
+      }
+    }
+
+    renderSlice();
+    container.onscroll = () => renderSlice();
+    updateProgressBar();
   }
 
-  renderBatch();
-}
+  function renderWords(words = customWords) {
+    console.log('[renderWords] Called with', words.length, 'words');
+    const container = document.getElementById('word-container');
+    const myWords = words.filter(w => w.userId === userId);
+    console.log('[renderWords] myWords filtered:', myWords.length, 'userId:', userId);
 
-let currentFilter = 'all'; // 'learned' / 'unlearned' / 'all'
+    if (myWords.length > 0) {
+      container.style.display = 'block';
+      document.getElementById('loading').style.display = 'none';
+    }
+
+    mountVirtualList(myWords);
+  }
+
+  let currentFilter = 'all'; // 'learned' / 'unlearned' / 'all'
 
 function applyFilter(type) {
   currentFilter = type;
