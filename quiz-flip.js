@@ -58,19 +58,21 @@ function startQuiz() {
   const cardContainer = quizArea.querySelector('.quiz-card-container');
   const card = quizArea.querySelector('#quiz-card');
   
-  // クリック/タップでフリップ（どこを押してもフリップ）
+  // クリック/タップでフリップ（どこを押してもフリップ、答え判定なし）
   card.addEventListener('click', (e) => {
+    e.stopPropagation();
     card.classList.toggle('flipped');
   });
 
-  // スワイプ & タップジェスチャー
+  // スワイプ & タップジェスチャー（裏面でのみ判定）
   let touchStart = null;
   cardContainer.addEventListener('touchstart', (e) => {
     touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: Date.now() };
   });
   
   cardContainer.addEventListener('touchend', (e) => {
-    if (!touchStart) return;
+    if (!touchStart || !card.classList.contains('flipped')) return;
+    
     const touchEnd = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, time: Date.now() };
     const dx = touchEnd.x - touchStart.x;
     const dy = touchEnd.y - touchStart.y;
@@ -81,12 +83,12 @@ function startQuiz() {
     // タップ: 移動 < 10px & 時間 < 300ms
     const isTap = Math.abs(dx) < 10 && Math.abs(dy) < 10 && time < 300;
 
-    if (isSwipe && card.classList.contains('flipped')) {
+    if (isSwipe) {
       // 右スワイプ = 正解、左スワイプ = 不正解
       const isCorrect = dx > 0;
       handleQuizAnswer(question.word, isCorrect, cardContainer);
-    } else if (isTap && card.classList.contains('flipped')) {
-      // フリップ状態でのタップ: 左右の位置で判定
+    } else if (isTap) {
+      // タップ: 左右の位置で判定
       const cardRect = card.getBoundingClientRect();
       const tapX = touchStart.x;
       const cardCenter = cardRect.left + cardRect.width / 2;
@@ -95,13 +97,13 @@ function startQuiz() {
     }
   });
 
-  // マウスクリック対応（デスクトップ）
+  // マウスクリック対応（デスクトップ、裏面でのみ判定）
   cardContainer.addEventListener('click', (e) => {
     if (card.classList.contains('flipped')) {
       const cardRect = card.getBoundingClientRect();
       const clickX = e.clientX;
       const cardCenter = cardRect.left + cardRect.width / 2;
-      // 中央から 10% 以上離れた位置でのクリック
+      // 中央から離れた位置でのクリック
       if (Math.abs(clickX - cardCenter) > cardRect.width * 0.1) {
         const isCorrect = clickX > cardCenter;
         handleQuizAnswer(question.word, isCorrect, cardContainer);
