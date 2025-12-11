@@ -114,12 +114,13 @@ function startQuiz() {
 }
 
 function handleQuizAnswer(word, isCorrect, cardContainer) {
-  cardContainer.style.backgroundColor = isCorrect ? '#d4edda' : '#f8d7da';
-  cardContainer.style.pointerEvents = 'none';
+  const quizArea = document.getElementById('quiz-area');
+  quizArea.style.backgroundColor = isCorrect ? '#d4edda' : '#f8d7da';
+  quizArea.style.pointerEvents = 'none';
 
   setTimeout(() => {
-    cardContainer.style.backgroundColor = '';
-    cardContainer.style.pointerEvents = 'auto';
+    quizArea.style.backgroundColor = '';
+    quizArea.style.pointerEvents = 'auto';
 
     if (isCorrect) {
       correctStreaks[word] = (correctStreaks[word] || 0) + 1;

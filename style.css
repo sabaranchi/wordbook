@@ -388,6 +388,13 @@ section {
   margin-top: 0.5rem;
 }
 
+#quiz-area {
+  transition: background-color 0.3s ease;
+  padding: 1rem;
+  border-radius: 8px;
+  min-height: 200px;
+}
+
 .quiz-card-container {
   width: 100%;
   max-width: 400px;
