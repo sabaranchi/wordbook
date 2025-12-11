@@ -57,11 +57,26 @@ function startQuiz() {
 
   const cardContainer = quizArea.querySelector('.quiz-card-container');
   const card = quizArea.querySelector('#quiz-card');
+  const cardFront = card.querySelector('.flip-card-front');
+  const cardBack = card.querySelector('.flip-card-back');
   
-  // クリック/タップでフリップ（どこを押してもフリップ、答え判定なし）
-  card.addEventListener('click', (e) => {
+  // フロント（表）クリック: フリップのみ
+  cardFront.addEventListener('click', (e) => {
     e.stopPropagation();
     card.classList.toggle('flipped');
+  });
+
+  // バック（裏）クリック: 左右の位置で正誤判定
+  cardBack.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cardRect = card.getBoundingClientRect();
+    const clickX = e.clientX;
+    const cardCenter = cardRect.left + cardRect.width / 2;
+    // 中央から離れた位置でのクリック
+    if (Math.abs(clickX - cardCenter) > cardRect.width * 0.1) {
+      const isCorrect = clickX > cardCenter;
+      handleQuizAnswer(question.word, isCorrect, cardContainer);
+    }
   });
 
   // スワイプ & タップジェスチャー（裏面でのみ判定）
@@ -94,20 +109,6 @@ function startQuiz() {
       const cardCenter = cardRect.left + cardRect.width / 2;
       const isCorrect = tapX > cardCenter;
       handleQuizAnswer(question.word, isCorrect, cardContainer);
-    }
-  });
-
-  // マウスクリック対応（デスクトップ、裏面でのみ判定）
-  cardContainer.addEventListener('click', (e) => {
-    if (card.classList.contains('flipped')) {
-      const cardRect = card.getBoundingClientRect();
-      const clickX = e.clientX;
-      const cardCenter = cardRect.left + cardRect.width / 2;
-      // 中央から離れた位置でのクリック
-      if (Math.abs(clickX - cardCenter) > cardRect.width * 0.1) {
-        const isCorrect = clickX > cardCenter;
-        handleQuizAnswer(question.word, isCorrect, cardContainer);
-      }
     }
   });
 }
