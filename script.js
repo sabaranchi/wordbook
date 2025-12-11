@@ -1155,13 +1155,11 @@ function shuffleWords() {
 }
 
 //------------------------------------------
-// 🧠 クイズ機能
+// 🎴 Anki-style Flip Card Quiz
 //------------------------------------------
 function toggleQuizMode() {
   quizMode = quizMode === 'en-to' ? 'to-en' : 'en-to';
   localStorage.setItem('quizMode', quizMode);
-  const quizModeLabelEl = document.getElementById('quiz-mode-label');
-  if (quizModeLabelEl) quizModeLabelEl.textContent = quizMode === 'en-to' ? 'from English' : 'to English';
   startQuiz();
 }
 
@@ -1169,79 +1167,128 @@ function startQuiz() {
   const quizArea = document.getElementById('quiz-area');
   quizArea.innerHTML = '';
 
-  const myWords = customWords.filter(w => w.userId === userId); // ← 自分の単語だけ
+  const myWords = customWords.filter(w => w.userId === userId);
   const unlearned = myWords.filter(w => !learnedWords[w.word]);
   const learned = myWords.filter(w => learnedWords[w.word]);
 
   let pool = [];
-
   if (unlearned.length > 0) {
     const sortedByStreak = [...learned].sort((a, b) => (correctStreaks[a.word] || 0) - (correctStreaks[b.word] || 0));
-    pool = [...unlearned, ...sortedByStreak.slice(0, 100)]; // 未習得を中心に、習得済みもcorrectStreaksが小さいほうから100個混ぜる
+    pool = [...unlearned, ...sortedByStreak.slice(0, 100)];
   } else {
     pool = [...learned];
+  }
+
+  if (pool.length === 0) {
+    quizArea.innerHTML = '<p>No words to quiz. Add words first!</p>';
+    return;
   }
 
   const question = pool[Math.floor(Math.random() * pool.length)];
   currentQuestion = question;
 
-  const distractors = shuffle(
-    myWords.filter(w => w.word !== question.word)
-      .map(w => quizMode === 'en-to' ? w.meaning_jp : w.word)
-  ).slice(0, 4);
-
-  const correctAnswer = quizMode === 'en-to' ? question.meaning_jp : question.word;
-  const choices = shuffle([correctAnswer, ...distractors]);
-
-  const questionText = quizMode === 'en-to'
-    ? `「${question.word}」means?`
-    : `「${question.meaning_jp}」corresponds to which English word?`;
+  const front = quizMode === 'en-to' ? question.word : question.meaning_jp;
+  const back = quizMode === 'en-to' ? question.meaning_jp : question.word;
 
   quizArea.innerHTML = `
-    <h3>${questionText}<button class="play-btn" title="Play pronunciation">🔊</button><button onclick="toggleQuizMode()">Switch: <span id="quiz-mode-label">${quizMode === 'en-to' ? 'to English' : 'from English'}</span></button></h3>
-    ${choices.map(c => `<button onclick="checkAnswer('${c}', '${correctAnswer}', '${question.word}')">${c}</button>`).join('')}
+    <div class="quiz-mode-toggle">
+      <button onclick="toggleQuizMode()" style="font-size: 0.9rem;">
+        Mode: ${quizMode === 'en-to' ? '📖 English → Japanese' : '🗻 Japanese → English'}
+      </button>
+      <button class="play-btn" title="Play pronunciation" style="margin-left: 0.5rem;">🔊</button>
+    </div>
+
+    <div class="flip-card-container">
+      <div class="flip-card-inner" id="flip-card">
+        <div class="flip-card-front">${front}</div>
+        <div class="flip-card-back">${back}</div>
+      </div>
+    </div>
+
+    <div class="flip-hint">Click/Tap the card to flip</div>
+
+    <div class="swipe-zones">
+      <div class="swipe-zone incorrect" id="swipe-incorrect">
+        ❌ Incorrect<br><small>Swipe left / Tap left</small>
+      </div>
+      <div class="swipe-zone correct" id="swipe-correct">
+        ✅ Correct<br><small>Swipe right / Tap right</small>
+      </div>
+    </div>
   `;
 
+  // Flip card on click
+  const card = document.getElementById('flip-card');
+  if (card) {
+    card.addEventListener('click', () => {
+      card.classList.toggle('flipped');
+    });
+  }
+
+  // Play button
   const playBtn = quizArea.querySelector('.play-btn');
-  if (playBtn) playBtn.addEventListener('click', () => speak(String(question.word)));
+  if (playBtn) {
+    playBtn.addEventListener('click', () => speak(String(front)));
+  }
+
+  // Swipe/Tap handlers
+  const incorrectZone = document.getElementById('swipe-incorrect');
+  const correctZone = document.getElementById('swipe-correct');
+  let touchStartX = 0;
+
+  // Touch swipe detection
+  quizArea.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+  });
+
+  quizArea.addEventListener('touchend', (e) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchEndX - touchStartX;
+    if (Math.abs(diff) > 50) {
+      // Swipe detected
+      if (diff > 0) {
+        handleAnswer(true, question.word);
+      } else {
+        handleAnswer(false, question.word);
+      }
+    }
+  });
+
+  // Click handlers for zones
+  if (incorrectZone) {
+    incorrectZone.addEventListener('click', () => handleAnswer(false, question.word));
+  }
+  if (correctZone) {
+    correctZone.addEventListener('click', () => handleAnswer(true, question.word));
+  }
 }
 
-function checkAnswer(selected, correct, word) {
-  const quizArea = document.getElementById('quiz-area');
-  quizArea.style.backgroundColor = selected === correct ? '#d4edda' : '#f8d7da';
+function handleAnswer(isCorrect, word) {
+  if (isCorrect) {
+    correctStreaks[word] = (correctStreaks[word] || 0) + 1;
+    localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
 
-  setTimeout(() => {
-    quizArea.style.backgroundColor = '';
-
-    if (selected === correct) {
-      correctStreaks[word] = (correctStreaks[word] || 0) + 1;
-      localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
-
-      if (correctStreaks[word] >= 3) {
-        learnedWords[word] = true;
-        localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
-      }
-    } else {
-      correctStreaks[word] = 0;
-      localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
-
-      if (learnedWords[word]) {
-        learnedWords[word] = false;
-        localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
-      }
-
-      alert(`Incorrect... The correct answer is「${correct}」`);
+    if (correctStreaks[word] >= 3) {
+      learnedWords[word] = true;
+      localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
     }
+  } else {
+    correctStreaks[word] = 0;
+    localStorage.setItem('correctStreaks', JSON.stringify(correctStreaks));
 
-    // DB とシートに確実に状態を送る（数値化して渡す）
-    try {
-      updateLearningStatus(word, !!learnedWords[word], Number(correctStreaks[word] || 0));
-    } catch (e) {
-      console.error('updateLearningStatus failed', e);
+    if (learnedWords[word]) {
+      learnedWords[word] = false;
+      localStorage.setItem('learnedWords', JSON.stringify(learnedWords));
     }
+  }
 
-    startQuiz();
-  }, 500);
+  try {
+    updateLearningStatus(word, !!learnedWords[word], Number(correctStreaks[word] || 0));
+  } catch (e) {
+    console.error('updateLearningStatus failed', e);
+  }
+
+  setTimeout(() => startQuiz(), 800);
 }
 
 function shuffle(arr) {
