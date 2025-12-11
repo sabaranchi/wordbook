@@ -46,10 +46,6 @@ function startQuiz() {
         <div class="flip-card-back">${backText}</div>
       </div>
     </div>
-    <div style="margin-top:1rem; font-size:0.9rem; color:#666; text-align:center;">
-      <p style="margin:0.3rem 0;">👆 カードをタップして裏返す</p>
-      <p style="margin:0.3rem 0;">👈 左タップ/スワイプ = 不正解 | 右タップ/スワイプ = 正解 👉</p>
-    </div>
   `;
 
   const playBtn = quizArea.querySelector('.play-btn');

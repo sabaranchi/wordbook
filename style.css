@@ -332,7 +332,7 @@ section {
   perspective: 1000px;
   width: 100%;
   max-width: 400px;
-  height: 300px;
+  height: 150px;
   margin: 2rem auto;
   cursor: pointer;
 }
@@ -363,16 +363,16 @@ section {
 }
 
 .flip-card-front {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #007bff;
   color: white;
-  font-size: 1.8rem;
+  font-size: 1.6rem;
   font-weight: bold;
 }
 
 .flip-card-back {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background: #0056b3;
   color: white;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   font-weight: bold;
   transform: rotateY(180deg);
 }
