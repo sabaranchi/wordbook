@@ -40,10 +40,12 @@ function startQuiz() {
       <button onclick="toggleQuizMode()" style="margin-right:0.5rem;">Mode: ${modeLabel}</button>
       <button class="play-btn" title="Play pronunciation">🔊</button>
     </div>
-    <div id="quiz-card" class="flip-card" data-word="${question.word.replace(/"/g, '&quot;')}">
-      <div class="flip-card-inner">
-        <div class="flip-card-front">${frontText}</div>
-        <div class="flip-card-back">${backText}</div>
+    <div class="quiz-card-container">
+      <div id="quiz-card" class="flip-card" data-word="${question.word.replace(/"/g, '&quot;')}">
+        <div class="flip-card-inner">
+          <div class="flip-card-front">${frontText}</div>
+          <div class="flip-card-back">${backText}</div>
+        </div>
       </div>
     </div>
   `;
@@ -53,23 +55,21 @@ function startQuiz() {
     playBtn.addEventListener('click', () => speak(String(question.word)));
   }
 
+  const cardContainer = quizArea.querySelector('.quiz-card-container');
   const card = quizArea.querySelector('#quiz-card');
   
-  // クリック/タップでフリップ
+  // クリック/タップでフリップ（どこを押してもフリップ）
   card.addEventListener('click', (e) => {
-    // 裏返し状態でない場合だけフリップ
-    if (!card.classList.contains('flipped')) {
-      card.classList.add('flipped');
-    }
+    card.classList.toggle('flipped');
   });
 
   // スワイプ & タップジェスチャー
   let touchStart = null;
-  card.addEventListener('touchstart', (e) => {
+  cardContainer.addEventListener('touchstart', (e) => {
     touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: Date.now() };
   });
   
-  card.addEventListener('touchend', (e) => {
+  cardContainer.addEventListener('touchend', (e) => {
     if (!touchStart) return;
     const touchEnd = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, time: Date.now() };
     const dx = touchEnd.x - touchStart.x;
@@ -84,19 +84,19 @@ function startQuiz() {
     if (isSwipe && card.classList.contains('flipped')) {
       // 右スワイプ = 正解、左スワイプ = 不正解
       const isCorrect = dx > 0;
-      handleQuizAnswer(question.word, isCorrect);
+      handleQuizAnswer(question.word, isCorrect, cardContainer);
     } else if (isTap && card.classList.contains('flipped')) {
       // フリップ状態でのタップ: 左右の位置で判定
       const cardRect = card.getBoundingClientRect();
       const tapX = touchStart.x;
       const cardCenter = cardRect.left + cardRect.width / 2;
       const isCorrect = tapX > cardCenter;
-      handleQuizAnswer(question.word, isCorrect);
+      handleQuizAnswer(question.word, isCorrect, cardContainer);
     }
   });
 
   // マウスクリック対応（デスクトップ）
-  card.addEventListener('click', (e) => {
+  cardContainer.addEventListener('click', (e) => {
     if (card.classList.contains('flipped')) {
       const cardRect = card.getBoundingClientRect();
       const clickX = e.clientX;
@@ -104,20 +104,19 @@ function startQuiz() {
       // 中央から 10% 以上離れた位置でのクリック
       if (Math.abs(clickX - cardCenter) > cardRect.width * 0.1) {
         const isCorrect = clickX > cardCenter;
-        handleQuizAnswer(question.word, isCorrect);
+        handleQuizAnswer(question.word, isCorrect, cardContainer);
       }
     }
   });
 }
 
-function handleQuizAnswer(word, isCorrect) {
-  const quizArea = document.getElementById('quiz-area');
-  quizArea.style.backgroundColor = isCorrect ? '#d4edda' : '#f8d7da';
-  quizArea.style.pointerEvents = 'none';
+function handleQuizAnswer(word, isCorrect, cardContainer) {
+  cardContainer.style.backgroundColor = isCorrect ? '#d4edda' : '#f8d7da';
+  cardContainer.style.pointerEvents = 'none';
 
   setTimeout(() => {
-    quizArea.style.backgroundColor = '';
-    quizArea.style.pointerEvents = 'auto';
+    cardContainer.style.backgroundColor = '';
+    cardContainer.style.pointerEvents = 'auto';
 
     if (isCorrect) {
       correctStreaks[word] = (correctStreaks[word] || 0) + 1;

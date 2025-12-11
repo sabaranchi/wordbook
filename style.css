@@ -332,7 +332,7 @@ section {
   perspective: 1000px;
   width: 100%;
   max-width: 400px;
-  height: 150px;
+  height: 70px;
   margin: 2rem auto;
   cursor: pointer;
 }
@@ -365,14 +365,14 @@ section {
 .flip-card-front {
   background: #007bff;
   color: white;
-  font-size: 1.6rem;
+  font-size: 1.2rem;
   font-weight: bold;
 }
 
 .flip-card-back {
   background: #0056b3;
   color: white;
-  font-size: 1.4rem;
+  font-size: 1rem;
   font-weight: bold;
   transform: rotateY(180deg);
 }
@@ -386,6 +386,14 @@ section {
   font-size: 0.9rem;
   opacity: 0.8;
   margin-top: 0.5rem;
+}
+
+.quiz-card-container {
+  width: 100%;
+  max-width: 400px;
+  margin: 2rem auto;
+  border-radius: 8px;
+  transition: background-color 0.3s ease;
 }
 
 .quiz-controls {
