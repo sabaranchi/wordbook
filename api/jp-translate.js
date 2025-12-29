@@ -67,7 +67,10 @@ export default async function handler(req, res) {
         /^\d+[\.\)]+$/, // just numbers with punctuation
         /[:：]/, // contains colon or full-width colon (likely section markers or descriptive text)
         /^[\s]*[、。，。]+[\s]*$/, // just punctuation
-        /[\?\？！！]/ // contains question/exclamation marks (likely meta text)
+        /[\?\？！！]/, // contains question/exclamation marks (likely meta text)
+        /。[\s]*$/, // ends with sentence-ending punctuation (full-width period) - likely UI text
+        /連絡|報告|削除|編集|送信|問題/, // action verbs/UI text like "連絡する", "報告する"
+        /不適切|スパム|問題があります/ // abuse/spam report keywords
       ];
       
       for (const match of matches) {
