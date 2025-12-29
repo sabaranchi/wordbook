@@ -70,7 +70,10 @@ export default async function handler(req, res) {
         /[\?\？！！]/, // contains question/exclamation marks (likely meta text)
         /。[\s]*$/, // ends with sentence-ending punctuation (full-width period) - likely UI text
         /連絡|報告|削除|編集|送信|問題/, // action verbs/UI text like "連絡する", "報告する"
-        /不適切|スパム|問題があります/ // abuse/spam report keywords
+        /不適切|スパム|問題があります/, // abuse/spam report keywords
+        /、.{0,20}(広告|コピーライト|著作権|プライバシー)/, // page boilerplate with comma separator
+        /^(広告|コピーライト|著作権|プライバシー)/, // page footer/header text
+        /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright keywords
       ];
       
       for (const match of matches) {
