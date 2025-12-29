@@ -1045,6 +1045,7 @@ function renderCard(word, actualIndex) {
   // --- Virtual list helpers ---
   let cardCache = new Map(); // word -> card DOM
   let virtualState = null;   // { words, itemHeight, topSpacer, bottomSpacer, host }
+  let scrollHandler = null;  // 前のハンドラを保持してクリーンアップ用
 
   function ensureCard(wordObj) {
     const key = wordObj.word;
@@ -1058,6 +1059,12 @@ function renderCard(word, actualIndex) {
   function mountVirtualList(words) {
     const container = document.getElementById('word-container');
     if (!container) return;
+
+    // 前のスクロールハンドラをクリーンアップ
+    if (scrollHandler) {
+      container.removeEventListener('scroll', scrollHandler);
+      scrollHandler = null;
+    }
 
     container.innerHTML = '';
     container.style.position = 'relative';
@@ -1087,6 +1094,10 @@ function renderCard(word, actualIndex) {
       const scrollY = container.scrollTop;
       const start = Math.max(0, Math.floor(scrollY / itemHeight) - buffer);
       const end = Math.min(words.length, start + visibleCount + buffer * 2);
+      
+      // スクロール位置が変わらなければ再レンダリングしない（無限ループ防止）
+      if (virtualState.start === start && virtualState.end === end) return;
+      
       virtualState.start = start;
       virtualState.end = end;
 
@@ -1101,7 +1112,9 @@ function renderCard(word, actualIndex) {
     }
 
     renderSlice();
-    container.onscroll = () => renderSlice();
+    // addEventListener で登録してから参照を保持（removeEventListener 用）
+    scrollHandler = () => renderSlice();
+    container.addEventListener('scroll', scrollHandler);
     updateProgressBar();
   }
 
