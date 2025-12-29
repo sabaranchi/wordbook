@@ -11,7 +11,8 @@ export default async function handler(req, res) {
       return;
     }
 
-    const uniq = new Set();
+    const wrTerms = [];
+    const jishoTerms = [];
     const sourcesUsed = [];
 
     // --- helper: fetch text with timeout
@@ -46,7 +47,6 @@ export default async function handler(req, res) {
     // --- WordReference PRIMARY: scrape English-Japanese translation
     try {
       const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
-      const before = uniq.size;
       const html = await fetchText(wrUrl);
       
       // Extract Japanese translations from WordReference HTML
@@ -92,11 +92,11 @@ export default async function handler(req, res) {
         
         // Filter by Japanese characters presence
         if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
-          uniq.add(term);
-          if (uniq.size >= lim) break;
+          wrTerms.push(term);
+          if (wrTerms.length >= lim) break;
         }
       }
-      if (uniq.size > before) {
+      if (wrTerms.length > 0) {
         sourcesUsed.push('wordreference');
       }
     } catch (e) {
@@ -104,9 +104,8 @@ export default async function handler(req, res) {
     }
 
     // --- Jisho (JMdict) fallback
-    if (uniq.size < lim) {
+    if (wrTerms.length < lim) {
       try {
-        const before = uniq.size;
         const jishoUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`;
         const data = await fetchJson(jishoUrl);
         if (data && Array.isArray(data.data)) {
@@ -114,14 +113,14 @@ export default async function handler(req, res) {
             if (entry && Array.isArray(entry.japanese)) {
               for (const jp of entry.japanese) {
                 const term = (jp.word || jp.reading || '').trim();
-                if (term) uniq.add(term);
-                if (uniq.size >= lim) break;
+                if (term) jishoTerms.push(term);
+                if (jishoTerms.length >= lim - wrTerms.length) break;
               }
             }
-            if (uniq.size >= lim) break;
+            if (jishoTerms.length >= lim - wrTerms.length) break;
           }
         }
-        if (uniq.size > before) {
+        if (jishoTerms.length > 0) {
           sourcesUsed.push('jisho');
         }
       } catch (e) {
@@ -129,7 +128,27 @@ export default async function handler(req, res) {
       }
     }
 
-    const out = Array.from(uniq).slice(0, lim);
+    // --- Format WordReference results: detect "それ以外の訳語" pattern
+    let formattedWrTerms = [];
+    const otherTransIdx = wrTerms.findIndex(t => /^それ以外の訳語$/.test(t));
+    
+    if (otherTransIdx !== -1 && otherTransIdx < wrTerms.length - 1) {
+      // Add terms before "それ以外の訳語"
+      formattedWrTerms = wrTerms.slice(0, otherTransIdx);
+      // Format "それ以外の訳語（terms...）"
+      const otherTerms = wrTerms.slice(otherTransIdx + 1);
+      if (otherTerms.length > 0) {
+        formattedWrTerms.push(`それ以外の訳語（${otherTerms.join('、')}）`);
+      }
+    } else {
+      // No special formatting needed
+      formattedWrTerms = wrTerms;
+    }
+
+    // --- Combine: Jisho first, then WordReference
+    const combined = [...jishoTerms, ...formattedWrTerms];
+    const out = combined.slice(0, lim);
+
     res.status(200).json({ ok: true, result: out, sourcesUsed });
   } catch (err) {
     console.error('jp-translate error', err);
