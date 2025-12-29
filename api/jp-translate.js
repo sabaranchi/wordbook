@@ -50,14 +50,29 @@ export default async function handler(req, res) {
       const html = await fetchText(wrUrl);
       
       // Extract Japanese translations from WordReference HTML
-      // Look for patterns like <span class="ToWrd">...</span> within translation rows
-      const japanesePattern = /(?:class="(?:TarEng|TarTop|ToWrd)">|<td[^>]*>\s*(?:<[^>]*>)*)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
+      // Look for <span class="ToWrd">...</span> within translation cells
+      const japanesePattern = /<span class="ToWrd">([^<]+)<\/span>/g;
       const matches = html.matchAll(japanesePattern);
       
+      // Unwanted text patterns to exclude
+      const excludePatterns = [
+        /^[\s]*主な訳語[\s]*$/,
+        /^[\s]*英語[\s]*$/,
+        /^[\s]*日本語[\s]*$/,
+        /^[\s]*$/ // empty strings
+      ];
+      
       for (const match of matches) {
-        const term = (match[1] || '').trim();
+        let term = (match[1] || '').trim();
+        if (!term) continue;
+        
+        // Filter out unwanted text
+        if (excludePatterns.some(pat => pat.test(term))) {
+          continue;
+        }
+        
         // Filter by Japanese characters presence
-        if (term && /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
+        if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
           uniq.add(term);
           if (uniq.size >= lim) break;
         }
