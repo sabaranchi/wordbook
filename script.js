@@ -1312,50 +1312,23 @@ async function fetchWiktionaryTranslations(enWord, limit = 5) {
   }
 }
 
-// --- JP translations helper (prefers JMdict via Jisho; falls back to Wiktionary) ---
+// --- JP translations helper (server proxy to avoid CORS) ---
 async function fetchJapaneseTranslations(enWord, limit = 5) {
   try {
     if (!enWord || typeof enWord !== 'string') return '';
     const q = enWord.trim();
     if (!q) return '';
-    const url = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(q)}`;
+    const url = `/api/jp-translate?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(limit)}`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`jisho_http_${res.status}`);
+    if (!res.ok) throw new Error(`jp_proxy_http_${res.status}`);
     const data = await res.json();
-    const uniq = new Set();
-
-    if (data && Array.isArray(data.data)) {
-      for (const entry of data.data) {
-        if (entry && Array.isArray(entry.japanese)) {
-          for (const jp of entry.japanese) {
-            const term = (jp.word || jp.reading || '').trim();
-            if (term) {
-              uniq.add(term);
-              if (uniq.size >= limit) break;
-            }
-          }
-        }
-        if (uniq.size >= limit) break;
-      }
+    if (data && data.ok && Array.isArray(data.result)) {
+      return data.result.slice(0, limit).join('、');
     }
-
-    // Fallback to Wiktionary for slang/idiom/phrasal or when Jisho had no hit
-    if (uniq.size < 1) {
-      const w = await fetchWiktionaryTranslations(q, limit);
-      if (w) uniq.add(w);
-    }
-
-    const out = Array.from(uniq).flatMap(v => String(v).split('、')).filter(Boolean).slice(0, limit);
-    return out.join('、');
+    return '';
   } catch (e) {
     console.warn('fetchJapaneseTranslations failed', e);
-    // Final fallback: try Wiktionary once
-    try {
-      const w = await fetchWiktionaryTranslations(enWord, limit);
-      return w || '';
-    } catch (_) {
-      return '';
-    }
+    return '';
   }
 }
 
