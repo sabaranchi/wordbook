@@ -1319,13 +1319,20 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
     const q = enWord.trim();
     if (!q) return '';
     const url = `/api/jp-translate?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(limit)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`jp_proxy_http_${res.status}`);
-    const data = await res.json();
-    if (data && data.ok && Array.isArray(data.result)) {
-      return data.result.slice(0, limit).join('、');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000); // 10s timeout
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`jp_proxy_http_${res.status}`);
+      const data = await res.json();
+      if (data && data.ok && Array.isArray(data.result)) {
+        return data.result.slice(0, limit).join('、');
+      }
+      return '';
+    } finally {
+      clearTimeout(timer);
     }
-    return '';
   } catch (e) {
     console.warn('fetchJapaneseTranslations failed', e);
     return '';

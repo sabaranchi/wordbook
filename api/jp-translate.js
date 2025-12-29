@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     // --- helper: fetch JSON with timeout
     const fetchJson = async (url) => {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const timer = setTimeout(() => ctrl.abort(), 12000); // 増加: 6s → 12s
       try {
         const r = await fetch(url, { signal: ctrl.signal });
         if (!r.ok) throw new Error(`http_${r.status}`);
