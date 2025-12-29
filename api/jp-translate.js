@@ -59,9 +59,15 @@ export default async function handler(req, res) {
         /^[\s]*主な訳語[\s]*$/i,
         /^[\s]*英語[\s]*$/i,
         /^[\s]*日本語[\s]*$/i,
+        /^[\s]*成句[\s]*[:：]?[\s]*$/i,
+        /^[\s]*複合語[\s]*[:：]?[\s]*$/i,
+        /^[\s]*関連用語[\s]*[:：]?[\s]*$/i,
         /^[\s]*$/, // empty strings
         /^[\s]*\|[\s]*$/, // pipe separator
-        /^\d+[\.\)]+$/ // just numbers with punctuation
+        /^\d+[\.\)]+$/, // just numbers with punctuation
+        /[:：]/, // contains colon or full-width colon (likely section markers or descriptive text)
+        /^[\s]*[、。，。]+[\s]*$/, // just punctuation
+        /[\?\？！！]/ // contains question/exclamation marks (likely meta text)
       ];
       
       for (const match of matches) {
@@ -70,6 +76,11 @@ export default async function handler(req, res) {
         
         // Filter out unwanted text
         if (excludePatterns.some(pat => pat.test(term))) {
+          continue;
+        }
+        
+        // Additional length check: skip overly long terms (likely descriptions)
+        if (term.length > 50) {
           continue;
         }
         
