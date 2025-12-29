@@ -76,9 +76,15 @@ export default async function handler(req, res) {
         /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright keywords
       ];
       
+      // Use Set to track terms already added
+      const wrSet = new Set(wrTerms);
+      
       for (const match of matches) {
         let term = (match[1] || '').trim();
         if (!term) continue;
+        
+        // Skip if already added
+        if (wrSet.has(term)) continue;
         
         // Filter out unwanted text
         if (excludePatterns.some(pat => pat.test(term))) {
@@ -93,6 +99,7 @@ export default async function handler(req, res) {
         // Filter by Japanese characters presence
         if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
           wrTerms.push(term);
+          wrSet.add(term);
           if (wrTerms.length >= lim) break;
         }
       }
@@ -109,12 +116,18 @@ export default async function handler(req, res) {
         const jishoUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`;
         const data = await fetchJson(jishoUrl);
         if (data && Array.isArray(data.data)) {
+          // Use Set to track terms already added (including from WordReference)
+          const jishoSet = new Set([...jishoTerms, ...wrTerms]);
+          
           for (const entry of data.data) {
             if (entry && Array.isArray(entry.japanese)) {
               for (const jp of entry.japanese) {
                 const term = (jp.word || jp.reading || '').trim();
-                if (term) jishoTerms.push(term);
-                if (jishoTerms.length >= lim - wrTerms.length) break;
+                if (term && !jishoSet.has(term)) {
+                  jishoTerms.push(term);
+                  jishoSet.add(term);
+                  if (jishoTerms.length >= lim - wrTerms.length) break;
+                }
               }
             }
             if (jishoTerms.length >= lim - wrTerms.length) break;
