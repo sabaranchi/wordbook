@@ -994,7 +994,11 @@ function updateProgressBar() {
 
 function renderCard(word, actualIndex) {
   const isLearned = learnedWords[word.word] || false;
-  const meaning_jpHTML = word.meaning_jp ? word.meaning_jp.replace(/\n/g, '<br>') : '<br>';
+  // Format meaning_jp: convert newlines to commas for consistent spacing
+  const meaning_jpFormatted = word.meaning_jp 
+    ? word.meaning_jp.replace(/\n/g, '、').replace(/、+/g, '、').trim()
+    : '';
+  const meaning_jpHTML = meaning_jpFormatted ? meaning_jpFormatted : '<br>';
   const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
   const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
   const categoryHTML = typeof word.category === 'string' ? word.category.replace(/,/g, ',&nbsp;&nbsp;') : Array.isArray(word.category) ? word.category.join(',&nbsp;&nbsp;') : '';
@@ -1378,40 +1382,7 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
         if (Array.isArray(data.sourcesUsed) && data.sourcesUsed.length) {
           console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
         }
-        
-        // Additional deduplication on client side
-        // Split by "、" and "（）" pattern to handle "それ以外の訳語（...）"
-        const resultTerms = [];
-        const seenTerms = new Set();
-        
-        for (const item of data.result.slice(0, limit)) {
-          // Check if it's a "それ以外の訳語（...）" pattern
-          const otherMatch = item.match(/^それ以外の訳語（(.+)）$/);
-          if (otherMatch) {
-            // Extract terms inside parentheses and deduplicate
-            const innerTerms = otherMatch[1]
-              .split('、')
-              .map(t => t.trim())
-              .filter(t => t && !seenTerms.has(t));
-            
-            for (const term of innerTerms) {
-              seenTerms.add(term);
-            }
-            
-            if (innerTerms.length > 0) {
-              resultTerms.push(`それ以外の訳語（${innerTerms.join('、')}）`);
-            }
-          } else {
-            // Regular term
-            const trimmedTerm = item.trim();
-            if (trimmedTerm && !seenTerms.has(trimmedTerm)) {
-              resultTerms.push(trimmedTerm);
-              seenTerms.add(trimmedTerm);
-            }
-          }
-        }
-        
-        return resultTerms.join('、');
+        return data.result.slice(0, limit).join('、');
       }
       return '';
     } finally {
