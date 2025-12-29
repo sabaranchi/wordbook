@@ -12,6 +12,7 @@ export default async function handler(req, res) {
     }
 
     const uniq = new Set();
+    const sourcesUsed = [];
 
     // --- helper: fetch text with timeout
     const fetchText = async (url) => {
@@ -44,7 +45,8 @@ export default async function handler(req, res) {
 
     // --- WordReference PRIMARY: scrape English-Japanese translation
     try {
-      const wrUrl = `https://www.wordreference.com/enfr/${encodeURIComponent(word)}`;
+      const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
+      const before = uniq.size;
       const html = await fetchText(wrUrl);
       
       // Extract Japanese translations from WordReference HTML
@@ -60,6 +62,9 @@ export default async function handler(req, res) {
           if (uniq.size >= lim) break;
         }
       }
+      if (uniq.size > before) {
+        sourcesUsed.push('wordreference');
+      }
     } catch (e) {
       console.warn('jp-translate: wordreference failed', e);
     }
@@ -67,6 +72,7 @@ export default async function handler(req, res) {
     // --- Jisho (JMdict) fallback
     if (uniq.size < lim) {
       try {
+        const before = uniq.size;
         const jishoUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`;
         const data = await fetchJson(jishoUrl);
         if (data && Array.isArray(data.data)) {
@@ -81,13 +87,16 @@ export default async function handler(req, res) {
             if (uniq.size >= lim) break;
           }
         }
+        if (uniq.size > before) {
+          sourcesUsed.push('jisho');
+        }
       } catch (e) {
         console.warn('jp-translate: jisho failed', e);
       }
     }
 
     const out = Array.from(uniq).slice(0, lim);
-    res.status(200).json({ ok: true, result: out });
+    res.status(200).json({ ok: true, result: out, sourcesUsed });
   } catch (err) {
     console.error('jp-translate error', err);
     res.status(500).json({ ok: false, error: 'server_error' });

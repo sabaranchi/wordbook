@@ -1375,6 +1375,9 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
       if (!res.ok) throw new Error(`jp_proxy_http_${res.status}`);
       const data = await res.json();
       if (data && data.ok && Array.isArray(data.result)) {
+        if (Array.isArray(data.sourcesUsed) && data.sourcesUsed.length) {
+          console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
+        }
         return data.result.slice(0, limit).join('、');
       }
       return '';
