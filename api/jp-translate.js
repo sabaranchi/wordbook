@@ -92,8 +92,13 @@ export default async function handler(req, res) {
         
         // Filter by Japanese characters presence
         if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
-          wrTerms.push(term);
-          if (wrTerms.length >= lim) break;
+          // Trim and normalize the term to avoid duplicate with different spacing
+          const normalizedTerm = term.trim();
+          // Only add if not already present (case-sensitive exact match)
+          if (!wrTerms.includes(normalizedTerm)) {
+            wrTerms.push(normalizedTerm);
+            if (wrTerms.length >= lim) break;
+          }
         }
       }
       if (wrTerms.length > 0) {
@@ -113,8 +118,13 @@ export default async function handler(req, res) {
             if (entry && Array.isArray(entry.japanese)) {
               for (const jp of entry.japanese) {
                 const term = (jp.word || jp.reading || '').trim();
-                if (term) jishoTerms.push(term);
-                if (jishoTerms.length >= lim - wrTerms.length) break;
+                if (term) {
+                  // Avoid duplicates with wrTerms
+                  if (!jishoTerms.includes(term) && !wrTerms.includes(term)) {
+                    jishoTerms.push(term);
+                    if (jishoTerms.length >= lim - wrTerms.length) break;
+                  }
+                }
               }
             }
             if (jishoTerms.length >= lim - wrTerms.length) break;
