@@ -1378,7 +1378,40 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
         if (Array.isArray(data.sourcesUsed) && data.sourcesUsed.length) {
           console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
         }
-        return data.result.slice(0, limit).join('、');
+        
+        // Additional deduplication on client side
+        // Split by "、" and "（）" pattern to handle "それ以外の訳語（...）"
+        const resultTerms = [];
+        const seenTerms = new Set();
+        
+        for (const item of data.result.slice(0, limit)) {
+          // Check if it's a "それ以外の訳語（...）" pattern
+          const otherMatch = item.match(/^それ以外の訳語（(.+)）$/);
+          if (otherMatch) {
+            // Extract terms inside parentheses and deduplicate
+            const innerTerms = otherMatch[1]
+              .split('、')
+              .map(t => t.trim())
+              .filter(t => t && !seenTerms.has(t));
+            
+            for (const term of innerTerms) {
+              seenTerms.add(term);
+            }
+            
+            if (innerTerms.length > 0) {
+              resultTerms.push(`それ以外の訳語（${innerTerms.join('、')}）`);
+            }
+          } else {
+            // Regular term
+            const trimmedTerm = item.trim();
+            if (trimmedTerm && !seenTerms.has(trimmedTerm)) {
+              resultTerms.push(trimmedTerm);
+              seenTerms.add(trimmedTerm);
+            }
+          }
+        }
+        
+        return resultTerms.join('、');
       }
       return '';
     } finally {
