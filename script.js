@@ -1558,6 +1558,7 @@ function showSection(name) {
 }
 
 let debounceTimer;
+let currentFetchId = 0; // 最新のフェッチを識別するためのカウンター
 
 document.getElementById('new-word').addEventListener('input', async function () {
   clearTimeout(debounceTimer);
@@ -1568,15 +1569,24 @@ document.getElementById('new-word').addEventListener('input', async function () 
     document.getElementById('new-meaning').value = '';
     document.getElementById('new-example').value = '';
     document.getElementById('new-category').value = '';
+    document.getElementById('new-meaning-ja').value = '';
     return;
   }
 
   debounceTimer = setTimeout(async () => {
+    const fetchId = ++currentFetchId; // このフェッチのIDを記録
     const lang = 'en'; // 必要に応じて 'en-us', 'en-uk', 'en-cn' などに変更
 
     try {
       console.log('fetch開始');
       const res = await fetch(`https://cambridge-dictionaryapi.vercel.app/api/dictionary/${lang}/${word}`);
+      
+      // 新しいフェッチが開始されている場合は古い結果を無視
+      if (fetchId !== currentFetchId) {
+        console.log('古いフェッチをキャンセル');
+        return;
+      }
+      
       if (!res.ok) {
         console.warn('Cambridge API returned', res.status);
         document.getElementById('new-meaning').value = '';
@@ -1585,7 +1595,9 @@ document.getElementById('new-word').addEventListener('input', async function () 
         // JP 側は別系統から取得を試みる
         try {
           const jp = await fetchJapaneseTranslations(word);
-          document.getElementById('new-meaning-ja').value = jp || '';
+          if (fetchId === currentFetchId) { // 再度確認
+            document.getElementById('new-meaning-ja').value = jp || '';
+          }
         } catch (_) {}
         return;
       }
@@ -1621,7 +1633,12 @@ document.getElementById('new-word').addEventListener('input', async function () 
       // 日本語訳（候補）を取得して埋める
       try {
         const jp = await fetchJapaneseTranslations(word);
-        document.getElementById('new-meaning-ja').value = jp || '';
+        // 最新のフェッチかどうか確認してから適用
+        if (fetchId === currentFetchId) {
+          document.getElementById('new-meaning-ja').value = jp || '';
+        } else {
+          console.log('古いJP翻訳結果をスキップ');
+        }
       } catch (e) {
         console.warn('JP translation fetch failed (input helper)', e);
       }

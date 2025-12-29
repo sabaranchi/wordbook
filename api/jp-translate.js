@@ -145,8 +145,21 @@ export default async function handler(req, res) {
       formattedWrTerms = wrTerms;
     }
 
-    // --- Combine: Jisho first, then WordReference
-    const combined = [...jishoTerms, ...formattedWrTerms];
+    // --- Detect common terms between Jisho and WordReference (higher priority)
+    const jishoSet = new Set(jishoTerms);
+    const wrSet = new Set(formattedWrTerms);
+    
+    // Common terms: appear in both sources
+    const commonTerms = jishoTerms.filter(term => wrSet.has(term));
+    
+    // Jisho-only terms: in Jisho but not in WordReference
+    const jishoOnlyTerms = jishoTerms.filter(term => !wrSet.has(term));
+    
+    // WordReference-only terms: in WordReference but not in Jisho
+    const wrOnlyTerms = formattedWrTerms.filter(term => !jishoSet.has(term));
+
+    // --- Combine: Common (highest priority) → Jisho-only → WordReference-only
+    const combined = [...commonTerms, ...jishoOnlyTerms, ...wrOnlyTerms];
     const out = combined.slice(0, lim);
 
     res.status(200).json({ ok: true, result: out, sourcesUsed });
