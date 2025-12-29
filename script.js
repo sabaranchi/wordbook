@@ -1254,6 +1254,111 @@ function shuffle(arr) {
   return a;
 }
 
+// --- Wiktionary (Wiktextract) fallback for JP translations & idioms ---
+async function fetchWiktionaryTranslations(enWord, limit = 5) {
+  try {
+    if (!enWord || typeof enWord !== 'string') return '';
+    const q = enWord.trim();
+    if (!q) return '';
+    // Wiktextract API (Wiktionary parsed). CORS-friendly endpoint.
+    const url = `https://api.wiktextract.com/en/word/${encodeURIComponent(q)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`wiktionary_http_${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data)) return '';
+
+    const uniq = new Set();
+    const tagSet = new Set(['idiom', 'phrasal verb', 'slang', 'colloquial']);
+
+    for (const entry of data) {
+      const senses = Array.isArray(entry.senses) ? entry.senses : [];
+      for (const s of senses) {
+        // Prefer explicit JA translations
+        if (Array.isArray(s.translations)) {
+          for (const t of s.translations) {
+            const isJa = (t.lang_code && t.lang_code.toLowerCase() === 'ja') || (t.lang && /japanese/i.test(t.lang));
+            if (isJa) {
+              const term = (t.word || t.text || '').trim();
+              if (term) uniq.add(term);
+            }
+            if (uniq.size >= limit) break;
+          }
+        }
+
+        if (uniq.size >= limit) break;
+
+        // If no JA translation, fall back to gloss when the sense is tagged as idiom/phrasal/slang
+        if (Array.isArray(s.glosses) && Array.isArray(s.tags)) {
+          const hasInterestingTag = s.tags.some(tag => tagSet.has(String(tag).toLowerCase()));
+          if (hasInterestingTag) {
+            for (const g of s.glosses) {
+              const term = String(g || '').trim();
+              if (term) uniq.add(term);
+              if (uniq.size >= limit) break;
+            }
+          }
+        }
+
+        if (uniq.size >= limit) break;
+      }
+      if (uniq.size >= limit) break;
+    }
+
+    const out = Array.from(uniq).slice(0, limit);
+    return out.join('、');
+  } catch (e) {
+    console.warn('fetchWiktionaryTranslations failed', e);
+    return '';
+  }
+}
+
+// --- JP translations helper (prefers JMdict via Jisho; falls back to Wiktionary) ---
+async function fetchJapaneseTranslations(enWord, limit = 5) {
+  try {
+    if (!enWord || typeof enWord !== 'string') return '';
+    const q = enWord.trim();
+    if (!q) return '';
+    const url = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(q)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`jisho_http_${res.status}`);
+    const data = await res.json();
+    const uniq = new Set();
+
+    if (data && Array.isArray(data.data)) {
+      for (const entry of data.data) {
+        if (entry && Array.isArray(entry.japanese)) {
+          for (const jp of entry.japanese) {
+            const term = (jp.word || jp.reading || '').trim();
+            if (term) {
+              uniq.add(term);
+              if (uniq.size >= limit) break;
+            }
+          }
+        }
+        if (uniq.size >= limit) break;
+      }
+    }
+
+    // Fallback to Wiktionary for slang/idiom/phrasal or when Jisho had no hit
+    if (uniq.size < 1) {
+      const w = await fetchWiktionaryTranslations(q, limit);
+      if (w) uniq.add(w);
+    }
+
+    const out = Array.from(uniq).flatMap(v => String(v).split('、')).filter(Boolean).slice(0, limit);
+    return out.join('、');
+  } catch (e) {
+    console.warn('fetchJapaneseTranslations failed', e);
+    // Final fallback: try Wiktionary once
+    try {
+      const w = await fetchWiktionaryTranslations(enWord, limit);
+      return w || '';
+    } catch (_) {
+      return '';
+    }
+  }
+}
+
 // --- ここから追加: 音声再生機能 (Web Speech API) ---
 function detectLang(text) {
   if (!text) return 'en-US';
@@ -1446,6 +1551,11 @@ document.getElementById('new-word').addEventListener('input', async function () 
         document.getElementById('new-meaning').value = '';
         document.getElementById('new-example').value = '';
         document.getElementById('new-category').value = '';
+        // JP 側は別系統から取得を試みる
+        try {
+          const jp = await fetchJapaneseTranslations(word);
+          document.getElementById('new-meaning-ja').value = jp || '';
+        } catch (_) {}
         return;
       }
       const data = await res.json();
@@ -1476,12 +1586,21 @@ document.getElementById('new-word').addEventListener('input', async function () 
       document.getElementById('new-meaning').value = formattedMeanings;
       document.getElementById('new-example').value = formattedExamples;
       document.getElementById('new-category').value = category;
+
+      // 日本語訳（候補）を取得して埋める
+      try {
+        const jp = await fetchJapaneseTranslations(word);
+        document.getElementById('new-meaning-ja').value = jp || '';
+      } catch (e) {
+        console.warn('JP translation fetch failed (input helper)', e);
+      }
     } catch (err) {
       console.error('辞書情報の取得に失敗しました', err);
       alert('辞書情報の取得に失敗しました。ネットワークや単語を確認してください。');
       document.getElementById('new-meaning').value = '';
       document.getElementById('new-example').value = '';
       document.getElementById('new-category').value = '';
+      try { document.getElementById('new-meaning-ja').value = ''; } catch (_) {}
     }
   }, 300); // ← 入力が止まってから0.3秒後に実行
 });
@@ -1538,6 +1657,14 @@ async function enrichWordFromDictionary(index) {
     wordObj.example = formattedExamples;
     wordObj.category = category;
 
+    // 日本語訳（候補）
+    try {
+      wordObj.meaning_jp = await fetchJapaneseTranslations(word);
+    } catch (e) {
+      console.warn('JP translation fetch failed (auto-fill)', e);
+      wordObj.meaning_jp = wordObj.meaning_jp || '';
+    }
+
     await new Promise((resolve, reject) => {
       useDB('readwrite', store => {
         if (!wordObj || !wordObj.word) {
@@ -1554,6 +1681,7 @@ async function enrichWordFromDictionary(index) {
       console.log('calling callSheetApi update for', wordObj.word);
       const resp = await callSheetApi('update', {
         word: wordObj.word,
+        meaning_jp: wordObj.meaning_jp || '',
         meaning: wordObj.meaning,
         example: wordObj.example,
         category: wordObj.category,
