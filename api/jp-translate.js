@@ -128,38 +128,51 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- Format WordReference results: detect "それ以外の訳語" pattern
-    let formattedWrTerms = [];
+    // --- Extract all WordReference terms (including those after "それ以外の訳語")
     const otherTransIdx = wrTerms.findIndex(t => /^それ以外の訳語$/.test(t));
+    let allWrTerms = [];
     
-    if (otherTransIdx !== -1 && otherTransIdx < wrTerms.length - 1) {
-      // Add terms before "それ以外の訳語"
-      formattedWrTerms = wrTerms.slice(0, otherTransIdx);
-      // Format "それ以外の訳語（terms...）"
-      const otherTerms = wrTerms.slice(otherTransIdx + 1);
-      if (otherTerms.length > 0) {
-        formattedWrTerms.push(`それ以外の訳語（${otherTerms.join('、')}）`);
-      }
+    if (otherTransIdx !== -1) {
+      // Exclude "それ以外の訳語" label itself, keep everything else
+      allWrTerms = [
+        ...wrTerms.slice(0, otherTransIdx),
+        ...wrTerms.slice(otherTransIdx + 1)
+      ];
     } else {
-      // No special formatting needed
-      formattedWrTerms = wrTerms;
+      allWrTerms = wrTerms;
     }
 
-    // --- Detect common terms between Jisho and WordReference (higher priority)
+    // --- Detect common terms between Jisho and WordReference (using raw terms)
     const jishoSet = new Set(jishoTerms);
-    const wrSet = new Set(formattedWrTerms);
+    const allWrSet = new Set(allWrTerms);
     
-    // Common terms: appear in both sources
-    const commonTerms = jishoTerms.filter(term => wrSet.has(term));
+    // Common terms: appear in both sources (highest priority)
+    const commonTerms = jishoTerms.filter(term => allWrSet.has(term));
+    const commonSet = new Set(commonTerms);
     
     // Jisho-only terms: in Jisho but not in WordReference
-    const jishoOnlyTerms = jishoTerms.filter(term => !wrSet.has(term));
+    const jishoOnlyTerms = jishoTerms.filter(term => !allWrSet.has(term));
     
-    // WordReference-only terms: in WordReference but not in Jisho
-    const wrOnlyTerms = formattedWrTerms.filter(term => !jishoSet.has(term));
+    // WordReference-only terms: in WordReference but not in Jisho, excluding common
+    const wrOnlyTerms = allWrTerms.filter(term => !jishoSet.has(term));
+    
+    // --- Format WordReference-only terms with "それ以外の訳語" pattern if needed
+    let formattedWrOnlyTerms = [];
+    if (otherTransIdx !== -1) {
+      // Split into main terms and "other" terms
+      const mainTerms = wrTerms.slice(0, otherTransIdx).filter(t => !commonSet.has(t));
+      const otherTerms = wrTerms.slice(otherTransIdx + 1).filter(t => !commonSet.has(t));
+      
+      formattedWrOnlyTerms = [...mainTerms];
+      if (otherTerms.length > 0) {
+        formattedWrOnlyTerms.push(`それ以外の訳語（${otherTerms.join('、')}）`);
+      }
+    } else {
+      formattedWrOnlyTerms = wrOnlyTerms;
+    }
 
     // --- Combine: Common (highest priority) → Jisho-only → WordReference-only
-    const combined = [...commonTerms, ...jishoOnlyTerms, ...wrOnlyTerms];
+    const combined = [...commonTerms, ...jishoOnlyTerms, ...formattedWrOnlyTerms];
     const out = combined.slice(0, lim);
 
     res.status(200).json({ ok: true, result: out, sourcesUsed });
