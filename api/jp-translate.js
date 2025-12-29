@@ -143,36 +143,56 @@ export default async function handler(req, res) {
     }
 
     // --- Detect common terms between Jisho and WordReference (using raw terms)
-    const jishoSet = new Set(jishoTerms);
-    const allWrSet = new Set(allWrTerms);
+    // Trim all terms for comparison
+    const jishoTermsTrimmed = jishoTerms.map(t => t.trim());
+    const allWrTermsTrimmed = allWrTerms.map(t => t.trim());
+    
+    const jishoSet = new Set(jishoTermsTrimmed);
+    const allWrSet = new Set(allWrTermsTrimmed);
     
     // Common terms: appear in both sources (highest priority)
-    const commonTerms = jishoTerms.filter(term => allWrSet.has(term));
+    const commonTerms = jishoTermsTrimmed.filter(term => allWrSet.has(term));
+    // Remove duplicates in commonTerms itself
     const commonSet = new Set(commonTerms);
+    const commonTermsUnique = Array.from(commonSet);
     
     // Jisho-only terms: in Jisho but not in WordReference
-    const jishoOnlyTerms = jishoTerms.filter(term => !allWrSet.has(term));
+    const jishoOnlyTerms = jishoTermsTrimmed.filter(term => !allWrSet.has(term));
+    // Remove duplicates in jishoOnlyTerms
+    const jishoOnlySet = new Set(jishoOnlyTerms);
+    const jishoOnlyTermsUnique = Array.from(jishoOnlySet);
     
     // WordReference-only terms: in WordReference but not in Jisho, excluding common
-    const wrOnlyTerms = allWrTerms.filter(term => !jishoSet.has(term));
+    const wrOnlyTerms = allWrTermsTrimmed.filter(term => !jishoSet.has(term));
+    // Remove duplicates in wrOnlyTerms
+    const wrOnlySet = new Set(wrOnlyTerms);
+    const wrOnlyTermsUnique = Array.from(wrOnlySet);
     
     // --- Format WordReference-only terms with "それ以外の訳語" pattern if needed
     let formattedWrOnlyTerms = [];
     if (otherTransIdx !== -1) {
-      // Split into main terms and "other" terms
-      const mainTerms = wrTerms.slice(0, otherTransIdx).filter(t => !commonSet.has(t));
-      const otherTerms = wrTerms.slice(otherTransIdx + 1).filter(t => !commonSet.has(t));
+      // Split into main terms and "other" terms using trimmed versions
+      const mainTerms = wrTerms.slice(0, otherTransIdx)
+        .map(t => t.trim())
+        .filter(t => !commonSet.has(t) && t);
+      const otherTerms = wrTerms.slice(otherTransIdx + 1)
+        .map(t => t.trim())
+        .filter(t => !commonSet.has(t) && t);
       
-      formattedWrOnlyTerms = [...mainTerms];
-      if (otherTerms.length > 0) {
-        formattedWrOnlyTerms.push(`それ以外の訳語（${otherTerms.join('、')}）`);
+      // Remove duplicates in mainTerms
+      const mainTermsUnique = Array.from(new Set(mainTerms));
+      const otherTermsUnique = Array.from(new Set(otherTerms));
+      
+      formattedWrOnlyTerms = [...mainTermsUnique];
+      if (otherTermsUnique.length > 0) {
+        formattedWrOnlyTerms.push(`それ以外の訳語（${otherTermsUnique.join('、')}）`);
       }
     } else {
-      formattedWrOnlyTerms = wrOnlyTerms;
+      formattedWrOnlyTerms = wrOnlyTermsUnique;
     }
 
     // --- Combine: Common (highest priority) → Jisho-only → WordReference-only
-    const combined = [...commonTerms, ...jishoOnlyTerms, ...formattedWrOnlyTerms];
+    const combined = [...commonTermsUnique, ...jishoOnlyTermsUnique, ...formattedWrOnlyTerms];
     const out = combined.slice(0, lim);
 
     res.status(200).json({ ok: true, result: out, sourcesUsed });
