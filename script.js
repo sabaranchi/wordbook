@@ -1104,10 +1104,45 @@ function renderCard(word, actualIndex) {
       topSpacer.style.height = `${start * itemHeight}px`;
       bottomSpacer.style.height = `${Math.max(0, (words.length - end) * itemHeight)}px`;
 
-      host.innerHTML = '';
+      // 差分更新: 前回と今回の範囲を比較して、必要なカードのみ追加/削除
+      const prevStart = (virtualState._prevStart ?? 0);
+      const prevEnd = (virtualState._prevEnd ?? 0);
+      virtualState._prevStart = start;
+      virtualState._prevEnd = end;
+
+      if (prevStart === start && prevEnd === end) return; // 既に同じ範囲
+
+      // 古いカードを削除
+      const toRemove = [];
+      for (let i = 0; i < host.children.length; i++) {
+        const child = host.children[i];
+        const word = child.dataset?.word;
+        const wordIdx = words.findIndex(w => w.word === word);
+        if (wordIdx < start || wordIdx >= end) {
+          toRemove.push(child);
+        }
+      }
+      toRemove.forEach(c => c.remove());
+
+      // 新しいカードを追加（既存カードは保持）
+      const existingWords = new Set(Array.from(host.children).map(c => c.dataset?.word));
       for (let i = start; i < end; i++) {
-        const card = ensureCard(words[i]);
-        host.appendChild(card);
+        const word = words[i];
+        if (!existingWords.has(word.word)) {
+          const card = ensureCard(word);
+          // 正しい位置に挿入
+          let inserted = false;
+          for (let j = 0; j < host.children.length; j++) {
+            const childWord = host.children[j].dataset?.word;
+            const childIdx = words.findIndex(w => w.word === childWord);
+            if (childIdx > i) {
+              host.insertBefore(card, host.children[j]);
+              inserted = true;
+              break;
+            }
+          }
+          if (!inserted) host.appendChild(card);
+        }
       }
     }
 
