@@ -78,14 +78,24 @@ export default async function handler(req, res) {
       ];
       
       const wrSet = new Set();
+      let firstSectionDone = false;
       for (const match of matches) {
         let term = (match[1] || '').trim();
         if (!term) continue;
+        
+        // Stop after collecting enough from first section to avoid mixing meanings
+        if (wrSet.size >= lim && !term.match(/^[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+(、[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)*$/)) {
+          break;
+        }
         
         // Filter out unwanted text
         if (excludePatterns.some(pat => pat.test(term))) {
           continue;
         }
+        
+        // Normalize: remove leading/trailing spaces and compress internal spaces
+        term = term.replace(/\s+/g, '');
+        if (!term) continue;
         
         // Additional length check: skip overly long terms (likely descriptions)
         if (term.length > 50) {

@@ -1382,23 +1382,27 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
         // Format output based on sources used
         let output = '';
         
+        // Clean and normalize terms: remove internal spaces
+        const cleanTerm = (t) => String(t || '').trim().replace(/\s+/g, '');
+        
         // WordReference results
         if (Array.isArray(data.wrResults) && data.wrResults.length > 0) {
-          output += data.wrResults.join('、');
+          output += data.wrResults.map(cleanTerm).filter(t => t).join('、');
         }
         
         // Jisho results (if supplementing WR)
         if (Array.isArray(data.jishoResults) && data.jishoResults.length > 0) {
+          const jishoClean = data.jishoResults.map(cleanTerm).filter(t => t).join('、');
           if (output) {
             // Add as "それ以外の訳語（...）" format
-            output += '、それ以外の訳語（' + data.jishoResults.join('、') + '）';
+            output += '、それ以外の訳語（' + jishoClean + '）';
           } else {
             // If only Jisho results, just add them
-            output = data.jishoResults.join('、');
+            output = jishoClean;
           }
         }
         
-        return output.slice(0, limit).join ? output : output;
+        return output;
       }
       return '';
     } finally {
