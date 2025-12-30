@@ -44,6 +44,12 @@ export default async function handler(req, res) {
       }
     };
 
+    // Debug logging
+    const DEBUG = true;
+    const debugLog = (phase, data) => {
+      if (DEBUG) console.log(`[jp-translate] [${word}] [${phase}]:`, data);
+    };
+
     // --- WordReference PRIMARY: scrape English-Japanese translation
     try {
       const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
@@ -76,17 +82,22 @@ export default async function handler(req, res) {
         /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright keywords
       ];
       
+      const allExtractedFromWr = [];
       for (const match of matches) {
         let term = (match[1] || '').trim();
         if (!term) continue;
         
+        allExtractedFromWr.push({ raw: match[1], trimmed: term });
+        
         // Filter out unwanted text
         if (excludePatterns.some(pat => pat.test(term))) {
+          debugLog('WR_FILTERED', `"${term}" (matched exclude pattern)`);
           continue;
         }
         
         // Additional length check: skip overly long terms (likely descriptions)
         if (term.length > 50) {
+          debugLog('WR_FILTERED', `"${term}" (too long: ${term.length})`);
           continue;
         }
         
@@ -96,11 +107,16 @@ export default async function handler(req, res) {
           const normalizedTerm = term.trim();
           // Only add if not already present (case-sensitive exact match)
           if (!wrTerms.includes(normalizedTerm)) {
+            debugLog('WR_ADDED', `"${normalizedTerm}"`);
             wrTerms.push(normalizedTerm);
             if (wrTerms.length >= lim) break;
+          } else {
+            debugLog('WR_SKIPPED', `"${normalizedTerm}" (already exists)`);
           }
         }
       }
+      debugLog('WR_ALL_EXTRACTED', allExtractedFromWr);
+      debugLog('WR_FINAL', wrTerms);
       if (wrTerms.length > 0) {
         sourcesUsed.push('wordreference');
       }
@@ -113,16 +129,23 @@ export default async function handler(req, res) {
       try {
         const jishoUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`;
         const data = await fetchJson(jishoUrl);
+        const allJishoExtracted = [];
         if (data && Array.isArray(data.data)) {
           for (const entry of data.data) {
             if (entry && Array.isArray(entry.japanese)) {
               for (const jp of entry.japanese) {
                 const term = (jp.word || jp.reading || '').trim();
                 if (term) {
+                  allJishoExtracted.push(term);
                   // Avoid duplicates with wrTerms
                   if (!jishoTerms.includes(term) && !wrTerms.includes(term)) {
+                    debugLog('JISHO_ADDED', `"${term}"`);
                     jishoTerms.push(term);
                     if (jishoTerms.length >= lim - wrTerms.length) break;
+                  } else if (wrTerms.includes(term)) {
+                    debugLog('JISHO_SKIPPED', `"${term}" (already in WR)`);
+                  } else {
+                    debugLog('JISHO_SKIPPED', `"${term}" (duplicate in JISHO)`);
                   }
                 }
               }
@@ -130,6 +153,8 @@ export default async function handler(req, res) {
             if (jishoTerms.length >= lim - wrTerms.length) break;
           }
         }
+        debugLog('JISHO_ALL_EXTRACTED', allJishoExtracted);
+        debugLog('JISHO_FINAL', jishoTerms);
         if (jishoTerms.length > 0) {
           sourcesUsed.push('jisho');
         }
@@ -139,8 +164,10 @@ export default async function handler(req, res) {
     }
 
     // --- Extract all WordReference terms (including those after "それ以外の訳語")
+    debugLog('PROCESS_WR_TERMS', wrTerms);
     const otherTransIdx = wrTerms.findIndex(t => /^それ以外の訳語$/.test(t));
     let allWrTerms = [];
+    debugLog('otherTransIdx', otherTransIdx);
     
     if (otherTransIdx !== -1) {
       // Exclude "それ以外の訳語" label itself, keep everything else
@@ -166,12 +193,19 @@ export default async function handler(req, res) {
     // WordReference-only terms: in WordReference but not in Jisho, excluding common
     const wrOnlyTerms = allWrTerms.filter(term => !jishoSet.has(term));
     
+    debugLog('COMMON_TERMS', commonTerms);
+    debugLog('JISHO_ONLY_TERMS', jishoOnlyTerms);
+    debugLog('WR_ONLY_TERMS', wrOnlyTerms);
+    
     // --- Format WordReference-only terms with "それ以外の訳語" pattern if needed
     let formattedWrOnlyTerms = [];
     if (otherTransIdx !== -1) {
       // Split into main terms and "other" terms
       const mainTerms = wrTerms.slice(0, otherTransIdx).filter(t => !commonSet.has(t));
       const otherTerms = wrTerms.slice(otherTransIdx + 1).filter(t => !commonSet.has(t));
+      
+      debugLog('WR_MAIN_TERMS_FILTERED', mainTerms);
+      debugLog('WR_OTHER_TERMS_FILTERED', otherTerms);
       
       formattedWrOnlyTerms = [...mainTerms];
       if (otherTerms.length > 0) {
@@ -181,9 +215,15 @@ export default async function handler(req, res) {
       formattedWrOnlyTerms = wrOnlyTerms;
     }
 
+    debugLog('FORMATTED_WR_ONLY_TERMS', formattedWrOnlyTerms);
+
     // --- Combine: Common (highest priority) → Jisho-only → WordReference-only
     const combined = [...commonTerms, ...jishoOnlyTerms, ...formattedWrOnlyTerms];
+    debugLog('COMBINED', combined);
+    debugLog('sourcesUsed', sourcesUsed);
+    
     const out = combined.slice(0, lim);
+    debugLog('FINAL_RESULT', out);
 
     res.status(200).json({ ok: true, result: out, sourcesUsed });
   } catch (err) {
