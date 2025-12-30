@@ -994,11 +994,7 @@ function updateProgressBar() {
 
 function renderCard(word, actualIndex) {
   const isLearned = learnedWords[word.word] || false;
-  // Format meaning_jp: convert newlines to commas for consistent spacing
-  const meaning_jpFormatted = word.meaning_jp 
-    ? word.meaning_jp.replace(/\n/g, '、').replace(/、+/g, '、').trim()
-    : '';
-  const meaning_jpHTML = meaning_jpFormatted ? meaning_jpFormatted : '<br>';
+  const meaning_jpHTML = word.meaning_jp ? word.meaning_jp.replace(/\n/g, '<br>') : '<br>';
   const meaningHTML = word.meaning ? word.meaning.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
   const exampleHTML = word.example ? word.example.replace(/\n/g, '<br>') : '&nbsp;&nbsp;&nbsp;&nbsp;';
   const categoryHTML = typeof word.category === 'string' ? word.category.replace(/,/g, ',&nbsp;&nbsp;') : Array.isArray(word.category) ? word.category.join(',&nbsp;&nbsp;') : '';
@@ -1378,11 +1374,31 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
       clearTimeout(timer);
       if (!res.ok) throw new Error(`jp_proxy_http_${res.status}`);
       const data = await res.json();
-      if (data && data.ok && Array.isArray(data.result)) {
+      if (data && data.ok) {
         if (Array.isArray(data.sourcesUsed) && data.sourcesUsed.length) {
           console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
         }
-        return data.result.slice(0, limit).join('、');
+        
+        // Format output based on sources used
+        let output = '';
+        
+        // WordReference results
+        if (Array.isArray(data.wrResults) && data.wrResults.length > 0) {
+          output += data.wrResults.join('、');
+        }
+        
+        // Jisho results (if supplementing WR)
+        if (Array.isArray(data.jishoResults) && data.jishoResults.length > 0) {
+          if (output) {
+            // Add as "それ以外の訳語（...）" format
+            output += '、それ以外の訳語（' + data.jishoResults.join('、') + '）';
+          } else {
+            // If only Jisho results, just add them
+            output = data.jishoResults.join('、');
+          }
+        }
+        
+        return output.slice(0, limit).join ? output : output;
       }
       return '';
     } finally {
@@ -1562,7 +1578,6 @@ function showSection(name) {
 }
 
 let debounceTimer;
-let currentFetchId = 0; // 最新のフェッチを識別するためのカウンター
 
 document.getElementById('new-word').addEventListener('input', async function () {
   clearTimeout(debounceTimer);
@@ -1573,24 +1588,15 @@ document.getElementById('new-word').addEventListener('input', async function () 
     document.getElementById('new-meaning').value = '';
     document.getElementById('new-example').value = '';
     document.getElementById('new-category').value = '';
-    document.getElementById('new-meaning-ja').value = '';
     return;
   }
 
   debounceTimer = setTimeout(async () => {
-    const fetchId = ++currentFetchId; // このフェッチのIDを記録
     const lang = 'en'; // 必要に応じて 'en-us', 'en-uk', 'en-cn' などに変更
 
     try {
       console.log('fetch開始');
       const res = await fetch(`https://cambridge-dictionaryapi.vercel.app/api/dictionary/${lang}/${word}`);
-      
-      // 新しいフェッチが開始されている場合は古い結果を無視
-      if (fetchId !== currentFetchId) {
-        console.log('古いフェッチをキャンセル');
-        return;
-      }
-      
       if (!res.ok) {
         console.warn('Cambridge API returned', res.status);
         document.getElementById('new-meaning').value = '';
@@ -1599,9 +1605,7 @@ document.getElementById('new-word').addEventListener('input', async function () 
         // JP 側は別系統から取得を試みる
         try {
           const jp = await fetchJapaneseTranslations(word);
-          if (fetchId === currentFetchId) { // 再度確認
-            document.getElementById('new-meaning-ja').value = jp || '';
-          }
+          document.getElementById('new-meaning-ja').value = jp || '';
         } catch (_) {}
         return;
       }
@@ -1637,12 +1641,7 @@ document.getElementById('new-word').addEventListener('input', async function () 
       // 日本語訳（候補）を取得して埋める
       try {
         const jp = await fetchJapaneseTranslations(word);
-        // 最新のフェッチかどうか確認してから適用
-        if (fetchId === currentFetchId) {
-          document.getElementById('new-meaning-ja').value = jp || '';
-        } else {
-          console.log('古いJP翻訳結果をスキップ');
-        }
+        document.getElementById('new-meaning-ja').value = jp || '';
       } catch (e) {
         console.warn('JP translation fetch failed (input helper)', e);
       }
