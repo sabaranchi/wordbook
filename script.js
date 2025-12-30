@@ -1385,32 +1385,17 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
         // Clean and normalize terms: remove internal spaces
         const cleanTerm = (t) => String(t || '').trim().replace(/\s+/g, '');
         
-        // WordReference main results
+        // WordReference results
         if (Array.isArray(data.wrResults) && data.wrResults.length > 0) {
           output += data.wrResults.map(cleanTerm).filter(t => t).join('、');
-        }
-        
-        // WordReference "other results" (displayed in parentheses)
-        if (Array.isArray(data.wrOtherResults) && data.wrOtherResults.length > 0) {
-          const wrOtherClean = data.wrOtherResults.map(cleanTerm).filter(t => t).join('、');
-          if (wrOtherClean) {
-            if (output) {
-              output += '、';
-            }
-            output += '（' + wrOtherClean + '）';
-          }
         }
         
         // Jisho results (if supplementing WR)
         if (Array.isArray(data.jishoResults) && data.jishoResults.length > 0) {
           const jishoClean = data.jishoResults.map(cleanTerm).filter(t => t).join('、');
           if (output) {
-            // Add as "それ以外の訳語（...）" format if no WR other results exist
-            if (!data.wrOtherResults || data.wrOtherResults.length === 0) {
-              output += '、それ以外の訳語（' + jishoClean + '）';
-            } else {
-              output += '、' + jishoClean;
-            }
+            // Add as "それ以外の訳語（...）" format
+            output += '、それ以外の訳語（' + jishoClean + '）';
           } else {
             // If only Jisho results, just add them
             output = jishoClean;

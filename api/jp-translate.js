@@ -13,7 +13,6 @@ export default async function handler(req, res) {
     }
 
     const wrResults = [];
-    const wrOtherResults = [];
     const jishoResults = [];
 
     // --- helper: fetch text with timeout
@@ -50,14 +49,15 @@ export default async function handler(req, res) {
       const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
       const html = await fetchText(wrUrl);
       
-      // Split HTML to detect "それ以外の訳語" section
-      const otherSectionMatch = html.match(/それ以外の訳語/);
-      const otherSectionIndex = otherSectionMatch ? html.indexOf(otherSectionMatch[0]) : -1;
+      // Split HTML to extract only the "main translations" section, before "Additional Translations"
+      // "それ以外の訳語" marks the start of additional translations we want to skip
+      const mainSectionMatch = html.split(/それ以外の訳語|Additional Translations/i);
+      const mainHtml = mainSectionMatch[0] || html;
       
       // Extract Japanese translations from WordReference HTML
       // More flexible pattern to capture Japanese text from various HTML structures
       const japanesePattern = /(?:class="(?:TarEng|TarTop|ToWrd)">|<td[^>]*>\s*(?:<[^>]*>)*)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
-      const matches = html.matchAll(japanesePattern);
+      const matches = mainHtml.matchAll(japanesePattern);
       
       // Unwanted text patterns to exclude
       const excludePatterns = [
@@ -83,13 +83,7 @@ export default async function handler(req, res) {
       ];
       
       const wrSet = new Set();
-      const wrOtherSet = new Set();
-      
       for (const match of matches) {
-        // Determine if this match is from "それ以外の訳語" section
-        const matchIndex = html.indexOf(match[1], Math.max(0, otherSectionIndex - 500));
-        const isOtherSection = otherSectionIndex > 0 && matchIndex > otherSectionIndex;
-        
         let term = (match[1] || '').trim();
         if (!term) continue;
         
@@ -115,16 +109,11 @@ export default async function handler(req, res) {
         
         // Filter by Japanese characters presence
         if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
-          if (isOtherSection) {
-            wrOtherSet.add(term);
-          } else {
-            wrSet.add(term);
-            if (wrSet.size >= lim) break;
-          }
+          wrSet.add(term);
+          if (wrSet.size >= lim) break;
         }
       }
       wrResults.push(...Array.from(wrSet));
-      wrOtherResults.push(...Array.from(wrOtherSet));
     } catch (e) {
       console.warn('jp-translate: wordreference failed', e);
     }
@@ -166,7 +155,6 @@ export default async function handler(req, res) {
       result: [...wrResults, ...jishoResults].slice(0, lim),
       sourcesUsed,
       wrResults,
-      wrOtherResults,
       jishoResults
     });
   } catch (err) {
