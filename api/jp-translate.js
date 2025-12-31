@@ -117,14 +117,13 @@ export default async function handler(req, res) {
       console.warn('jp-translate: weblio failed', { word, error: e?.message || e });
     }
 
-    // --- WordReference fallback if Weblio not enough
-    if (weblioResults.length < lim) {
-      try {
-        const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
-        const t1 = Date.now();
-        console.log('jp-translate: wr fetch start', { word, url: wrUrl });
-        const html = await fetchText(wrUrl);
-        console.log('jp-translate: wr fetch ok', { word, ms: Date.now() - t1, bytes: html.length });
+    // --- WordReference: always fetch to complement Weblio (especially for slang/informal expressions)
+    try {
+      const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
+      const t1 = Date.now();
+      console.log('jp-translate: wr fetch start', { word, url: wrUrl });
+      const html = await fetchText(wrUrl);
+      console.log('jp-translate: wr fetch ok', { word, ms: Date.now() - t1, bytes: html.length });
 
         // Restrict to main translations section
         const mainHtml = (html.split(/それ以外の訳語|Additional Translations/i)[0]) || html;
@@ -164,7 +163,7 @@ export default async function handler(req, res) {
           if (!term || term.length > 50) continue;
           if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
             wrSet.add(term);
-            if (wrSet.size - weblioResults.length >= (lim - weblioResults.length)) break;
+            if (wrSet.size >= lim * 2) break; // collect more to merge with Weblio
           }
         }
 
@@ -174,7 +173,6 @@ export default async function handler(req, res) {
       } catch (e) {
         console.warn('jp-translate: wr failed', { word, error: e?.message || e });
       }
-    }
 
     const combined = [...weblioResults, ...wrResults].slice(0, lim);
     const sourcesUsed = [];
