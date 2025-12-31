@@ -125,10 +125,9 @@ export default async function handler(req, res) {
       const html = await fetchText(wrUrl);
       console.log('jp-translate: wr fetch ok', { word, ms: Date.now() - t1, bytes: html.length });
 
-        // Restrict to main translations section
-        const mainHtml = (html.split(/それ以外の訳語|Additional Translations/i)[0]) || html;
+        // Include all sections (main + additional) for slang/informal expressions like "lol"
         const japanesePattern = /(?:class="(?:TarEng|TarTop|ToWrd)">|<td[^>]*>\s*(?:<[^>]*>)*)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
-        const matches = mainHtml.matchAll(japanesePattern);
+        const matches = html.matchAll(japanesePattern);
 
         const excludePatterns = [
           /^[\s]*主な訳語[\s]*$/i,
@@ -141,10 +140,8 @@ export default async function handler(req, res) {
           /^[\s]*$/, // empty strings
           /^[\s]*\|[\s]*$/, // pipe separator
           /^\d+[\.\)]+$/, // just numbers with punctuation
-          /[:：]/, // section markers
-          /^[\s]*[、。，。]+[\s]*$/,
-          /[\?\？！！]/,
-          /。[\s]*$/,
+          /^[\s]*[、。，。]+[\s]*$/, // just punctuation
+          /。[\s]*$/, // ends with full-width period
           /連絡|報告|削除|編集|送信|問題/,
           /不適切|スパム|問題があります/,
           /広告|コピーライト|著作権|プライバシー/,
@@ -152,8 +149,10 @@ export default async function handler(req, res) {
         ];
 
         const wrSet = new Set(weblioResults); // avoid duplicates with Weblio
+        let rawCount = 0;
         for (const match of matches) {
           let term = (match[1] || '').trim();
+          rawCount++;
           if (!term) continue;
           if (excludePatterns.some(p => p.test(term))) continue;
 
@@ -169,7 +168,7 @@ export default async function handler(req, res) {
 
         // Only push the WR additions (exclude ones already in Weblio)
         wrResults.push(...Array.from(wrSet).filter(t => !weblioResults.includes(t)));
-        console.log('jp-translate: wr parsed', { word, count: wrResults.length, sample: wrResults.slice(0,5) });
+        console.log('jp-translate: wr parsed', { word, rawMatches: rawCount, afterFilter: wrSet.size, unique: wrResults.length, sample: wrResults.slice(0,5) });
       } catch (e) {
         console.warn('jp-translate: wr failed', { word, error: e?.message || e });
       }
