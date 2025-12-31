@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     // --- helper: fetch text with timeout
     const fetchText = async (url) => {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 12000);
+      const timer = setTimeout(() => ctrl.abort(), 5000); // 5秒に短縮
       try {
         const r = await fetch(url, { 
           signal: ctrl.signal,
