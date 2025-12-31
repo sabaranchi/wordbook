@@ -35,9 +35,9 @@ export default async function handler(req, res) {
       const html = await fetchText(weblioUrl);
       
       // Extract Japanese translations from Weblio HTML
-      // More specific targeting: look for meaning sections
-      // Weblio typically has meanings in specific div/span structures
-      const japanesePattern = /<span class="content">([^<]+)<\/span>/g;
+      // Target the main meaning/translation span: <span class="content-explanation  ej">...</span>
+      // Allow extra classes around content-explanation ej
+      const japanesePattern = /<span class="[^"]*content-explanation\s+ej[^"]*">([^<]+)<\/span>/g;
       const matches = html.matchAll(japanesePattern);
       
       // Unwanted text patterns to exclude
