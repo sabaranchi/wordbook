@@ -125,9 +125,12 @@ export default async function handler(req, res) {
       const html = await fetchText(wrUrl);
       console.log('jp-translate: wr fetch ok', { word, ms: Date.now() - t1, bytes: html.length });
 
-        // Include all sections (main + additional) for slang/informal expressions like "lol"
-        const japanesePattern = /(?:class="(?:TarEng|TarTop|ToWrd)">|<td[^>]*>\s*(?:<[^>]*>)*)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
-        const matches = html.matchAll(japanesePattern);
+        // Extract main translations section only (before "Additional Translations")
+        const mainHtml = (html.split(/それ以外の訳語|Additional Translations/i)[0]) || html;
+        
+        // Broader pattern: capture any text containing Japanese characters
+        const japanesePattern = />([^<]*[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+[^<]*)</g;
+        const matches = mainHtml.matchAll(japanesePattern);
 
         const excludePatterns = [
           /^[\s]*主な訳語[\s]*$/i,
@@ -145,7 +148,8 @@ export default async function handler(req, res) {
           /連絡|報告|削除|編集|送信|問題/,
           /不適切|スパム|問題があります/,
           /広告|コピーライト|著作権|プライバシー/,
-          /,[\s]*(広告|著作権)/
+          /,[\s]*(広告|著作権)/,
+          /WordReference|Forum|Compound Forms|Inflections/ // site UI text
         ];
 
         const wrSet = new Set(weblioResults); // avoid duplicates with Weblio
