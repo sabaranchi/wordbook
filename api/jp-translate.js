@@ -32,8 +32,10 @@ export default async function handler(req, res) {
     // --- Weblio: scrape English-Japanese translation
     try {
       const weblioUrl = `https://ejje.weblio.jp/content/${encodeURIComponent(word)}`;
-      console.log('[jp-translate] weblio fetch start', { word, url: weblioUrl });
+      const t0 = Date.now();
+      console.log('jp-translate: weblio fetch start', { word, url: weblioUrl });
       const html = await fetchText(weblioUrl);
+      console.log('jp-translate: weblio fetch ok', { word, ms: Date.now() - t0, bytes: html.length });
       
       // Extract Japanese translations from Weblio HTML
       // Target the main meaning/translation blocks: span/div/td with class containing "content-explanation ej"
@@ -112,8 +114,9 @@ export default async function handler(req, res) {
           if (weblioSet.size >= lim) break;
         }
       }
-      weblioResults.push(...Array.from(weblioSet));
-      console.log('[jp-translate] weblio parsed', { word, count: weblioResults.length, results: weblioResults });
+      const collected = Array.from(weblioSet);
+      weblioResults.push(...collected);
+      console.log('jp-translate: weblio parsed', { word, count: collected.length, sample: collected.slice(0, 5) });
     } catch (e) {
       console.warn('jp-translate: weblio failed', { word, error: e?.message || e });
     }
