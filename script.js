@@ -1378,6 +1378,11 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
         if (Array.isArray(data.sourcesUsed) && data.sourcesUsed.length) {
           console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
         }
+
+        // Debug: inspect raw Weblio results
+        if (Array.isArray(data.weblioResults)) {
+          console.log('[jp-translate] weblioResults', { count: data.weblioResults.length, sample: data.weblioResults.slice(0, 5) });
+        }
         
         // Format output from Weblio results
         let output = '';
