@@ -1,6 +1,5 @@
 // Server-side JP translation proxy to avoid CORS
-// Tries WordReference first, then Jisho (JMdict) fallback
-// Returns translations grouped by source to prevent overwrites and allow flexible formatting
+// Uses Weblio dictionary (https://ejje.weblio.jp/) for English-Japanese translations
 
 export default async function handler(req, res) {
   try {
@@ -12,8 +11,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    const wrResults = [];
-    const jishoResults = [];
+    const weblioResults = [];
 
     // --- helper: fetch text with timeout
     const fetchText = async (url) => {
@@ -31,58 +29,40 @@ export default async function handler(req, res) {
       }
     };
 
-    // --- helper: fetch JSON with timeout
-    const fetchJson = async (url) => {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 12000);
-      try {
-        const r = await fetch(url, { signal: ctrl.signal });
-        if (!r.ok) throw new Error(`http_${r.status}`);
-        return await r.json();
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-
-    // --- WordReference PRIMARY: scrape English-Japanese translation
+    // --- Weblio: scrape English-Japanese translation
     try {
-      const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
-      const html = await fetchText(wrUrl);
+      const weblioUrl = `https://ejje.weblio.jp/content/${encodeURIComponent(word)}`;
+      const html = await fetchText(weblioUrl);
       
-      // Split HTML to extract only the "main translations" section, before "Additional Translations"
-      // "それ以外の訳語" marks the start of additional translations we want to skip
-      const mainSectionMatch = html.split(/それ以外の訳語|Additional Translations/i);
-      const mainHtml = mainSectionMatch[0] || html;
-      
-      // Extract Japanese translations from WordReference HTML
-      // More flexible pattern to capture Japanese text from various HTML structures
-      const japanesePattern = /(?:class="(?:TarEng|TarTop|ToWrd)">|<td[^>]*>\s*(?:<[^>]*>)*)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
-      const matches = mainHtml.matchAll(japanesePattern);
+      // Extract Japanese translations from Weblio HTML
+      // Target the main meaning section - typically in elements with class "content-explanation" or similar
+      const japanesePattern = /(?:class="(?:content-explanation|content|NetKjhead|Kejje)">|<span[^>]*>)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
+      const matches = html.matchAll(japanesePattern);
       
       // Unwanted text patterns to exclude
       const excludePatterns = [
-        /^[\s]*主な訳語[\s]*$/i,
-        /^[\s]*それ以外の訳語[\s]*$/i,
+        /^[\s]*英和[\s]*$/i,
+        /^[\s]*和英[\s]*$/i,
         /^[\s]*英語[\s]*$/i,
         /^[\s]*日本語[\s]*$/i,
-        /^[\s]*成句[\s]*[:：]?[\s]*$/i,
-        /^[\s]*複合語[\s]*[:：]?[\s]*$/i,
-        /^[\s]*関連用語[\s]*[:：]?[\s]*$/i,
+        /^[\s]*用例[\s]*$/i,
+        /^[\s]*例文[\s]*$/i,
+        /^[\s]*語源[\s]*$/i,
         /^[\s]*$/, // empty strings
         /^[\s]*\|[\s]*$/, // pipe separator
         /^\d+[\.\)]+$/, // just numbers with punctuation
-        /[:：]/, // contains colon or full-width colon (likely section markers or descriptive text)
+        /[:：][\s]*$/, // ends with colon (likely section markers)
         /^[\s]*[、。，。]+[\s]*$/, // just punctuation
         /[\?\？！！]/, // contains question/exclamation marks (likely meta text)
         /。[\s]*$/, // ends with sentence-ending punctuation (full-width period) - likely UI text
-        /連絡|報告|削除|編集|送信|問題/, // action verbs/UI text like "連絡する", "報告する"
+        /連絡|報告|削除|編集|送信|問題|ログイン|会員登録/, // action verbs/UI text
         /不適切|スパム|問題があります/, // abuse/spam report keywords
-        /、.{0,20}(広告|コピーライト|著作権|プライバシー)/, // page boilerplate with comma separator
-        /^(広告|コピーライト|著作権|プライバシー)/, // page footer/header text
-        /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright keywords
+        /広告|コピーライト|著作権|プライバシー|利用規約/, // page boilerplate
+        /Weblio|検索|辞書|英和|和英/, // site-specific UI text
+        /^[\s]*\d+[\s]*$/ // just numbers
       ];
       
-      const wrSet = new Set();
+      const weblioSet = new Set();
       for (const match of matches) {
         let term = (match[1] || '').trim();
         if (!term) continue;
@@ -92,10 +72,13 @@ export default async function handler(req, res) {
           continue;
         }
         
-        // Split by 、(Japanese comma) and take only the first part to avoid mixed meanings
-        // e.g., "犬 、 イヌ科の動物" → take only "犬"
+        // Split by 、(Japanese comma) or semicolon and take only the first part
         if (term.includes('、')) {
           term = term.split('、')[0].trim();
+        } else if (term.includes('；')) {
+          term = term.split('；')[0].trim();
+        } else if (term.includes(';')) {
+          term = term.split(';')[0].trim();
         }
         
         // Normalize: remove leading/trailing spaces and compress internal spaces
@@ -109,53 +92,20 @@ export default async function handler(req, res) {
         
         // Filter by Japanese characters presence
         if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
-          wrSet.add(term);
-          if (wrSet.size >= lim) break;
+          weblioSet.add(term);
+          if (weblioSet.size >= lim) break;
         }
       }
-      wrResults.push(...Array.from(wrSet));
+      weblioResults.push(...Array.from(weblioSet));
     } catch (e) {
-      console.warn('jp-translate: wordreference failed', e);
+      console.warn('jp-translate: weblio failed', e);
     }
-
-    // --- Jisho (JMdict) fallback
-    // Only fetch if WordReference results are insufficient
-    if (wrResults.length < lim) {
-      try {
-        const jishoUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`;
-        const data = await fetchJson(jishoUrl);
-        if (data && Array.isArray(data.data)) {
-          const jishoSet = new Set(wrResults); // Start with WR results to avoid duplicates
-          for (const entry of data.data) {
-            if (entry && Array.isArray(entry.japanese)) {
-              for (const jp of entry.japanese) {
-                const term = (jp.word || jp.reading || '').trim();
-                if (term && !jishoSet.has(term)) {
-                  jishoResults.push(term);
-                  jishoSet.add(term);
-                  if (jishoResults.length >= (lim - wrResults.length)) break;
-                }
-              }
-            }
-            if (jishoResults.length >= (lim - wrResults.length)) break;
-          }
-        }
-      } catch (e) {
-        console.warn('jp-translate: jisho failed', e);
-      }
-    }
-
-    // Determine sourcesUsed
-    const sourcesUsed = [];
-    if (wrResults.length > 0) sourcesUsed.push('wordreference');
-    if (jishoResults.length > 0) sourcesUsed.push('jisho');
 
     res.status(200).json({
       ok: true,
-      result: [...wrResults, ...jishoResults].slice(0, lim),
-      sourcesUsed,
-      wrResults,
-      jishoResults
+      result: weblioResults.slice(0, lim),
+      sourcesUsed: weblioResults.length > 0 ? ['weblio'] : [],
+      weblioResults
     });
   } catch (err) {
     console.error('jp-translate error', err);

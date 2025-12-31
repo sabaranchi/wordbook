@@ -1379,27 +1379,15 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
           console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
         }
         
-        // Format output based on sources used
+        // Format output from Weblio results
         let output = '';
         
         // Clean and normalize terms: remove internal spaces
         const cleanTerm = (t) => String(t || '').trim().replace(/\s+/g, '');
         
-        // WordReference results
-        if (Array.isArray(data.wrResults) && data.wrResults.length > 0) {
-          output += data.wrResults.map(cleanTerm).filter(t => t).join('、');
-        }
-        
-        // Jisho results (if supplementing WR)
-        if (Array.isArray(data.jishoResults) && data.jishoResults.length > 0) {
-          const jishoClean = data.jishoResults.map(cleanTerm).filter(t => t).join('、');
-          if (output) {
-            // Add as "それ以外の訳語（...）" format
-            output += '、それ以外の訳語（' + jishoClean + '）';
-          } else {
-            // If only Jisho results, just add them
-            output = jishoClean;
-          }
+        // Weblio results
+        if (Array.isArray(data.weblioResults) && data.weblioResults.length > 0) {
+          output = data.weblioResults.map(cleanTerm).filter(t => t).join('、');
         }
         
         return output;
