@@ -90,29 +90,24 @@ export default async function handler(req, res) {
           continue;
         }
         
-        // Split by 、(Japanese comma) or semicolon and take only the first part
-        if (term.includes('、')) {
-          term = term.split('、')[0].trim();
-        } else if (term.includes('；')) {
-          term = term.split('；')[0].trim();
-        } else if (term.includes(';')) {
-          term = term.split(';')[0].trim();
-        }
+        // Split into multiple candidates by common separators
+        const parts = term
+          .split(/[、；;，]/)
+          .map(s => s.replace(/\s+/g, '').trim())
+          .filter(Boolean);
         
-        // Normalize: remove leading/trailing spaces and compress internal spaces
-        term = term.replace(/\s+/g, '');
-        if (!term) continue;
-        
-        // Additional length check: skip overly long terms (likely descriptions)
-        if (term.length > 50) {
-          continue;
+        for (const p of parts) {
+          // Additional length check: skip overly long terms (likely descriptions)
+          if (p.length > 50) {
+            continue;
+          }
+          // Filter by Japanese characters presence
+          if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(p)) {
+            weblioSet.add(p);
+            if (weblioSet.size >= lim) break;
+          }
         }
-        
-        // Filter by Japanese characters presence
-        if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
-          weblioSet.add(term);
-          if (weblioSet.size >= lim) break;
-        }
+        if (weblioSet.size >= lim) break;
       }
       const collected = Array.from(weblioSet);
       weblioResults.push(...collected);
