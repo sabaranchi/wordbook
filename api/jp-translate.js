@@ -12,6 +12,7 @@ export default async function handler(req, res) {
     }
 
     const weblioResults = [];
+    const wrResults = [];
 
     // --- helper: fetch text with timeout
     const fetchText = async (url) => {
@@ -116,11 +117,76 @@ export default async function handler(req, res) {
       console.warn('jp-translate: weblio failed', { word, error: e?.message || e });
     }
 
+    // --- WordReference fallback if Weblio not enough
+    if (weblioResults.length < lim) {
+      try {
+        const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
+        const t1 = Date.now();
+        console.log('jp-translate: wr fetch start', { word, url: wrUrl });
+        const html = await fetchText(wrUrl);
+        console.log('jp-translate: wr fetch ok', { word, ms: Date.now() - t1, bytes: html.length });
+
+        // Restrict to main translations section
+        const mainHtml = (html.split(/それ以外の訳語|Additional Translations/i)[0]) || html;
+        const japanesePattern = /(?:class="(?:TarEng|TarTop|ToWrd)">|<td[^>]*>\s*(?:<[^>]*>)*)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
+        const matches = mainHtml.matchAll(japanesePattern);
+
+        const excludePatterns = [
+          /^[\s]*主な訳語[\s]*$/i,
+          /^[\s]*それ以外の訳語[\s]*$/i,
+          /^[\s]*英語[\s]*$/i,
+          /^[\s]*日本語[\s]*$/i,
+          /^[\s]*成句[\s]*[:：]?[\s]*$/i,
+          /^[\s]*複合語[\s]*[:：]?[\s]*$/i,
+          /^[\s]*関連用語[\s]*[:：]?[\s]*$/i,
+          /^[\s]*$/, // empty strings
+          /^[\s]*\|[\s]*$/, // pipe separator
+          /^\d+[\.\)]+$/, // just numbers with punctuation
+          /[:：]/, // section markers
+          /^[\s]*[、。，。]+[\s]*$/,
+          /[\?\？！！]/,
+          /。[\s]*$/,
+          /連絡|報告|削除|編集|送信|問題/,
+          /不適切|スパム|問題があります/,
+          /広告|コピーライト|著作権|プライバシー/,
+          /,[\s]*(広告|著作権)/
+        ];
+
+        const wrSet = new Set(weblioResults); // avoid duplicates with Weblio
+        for (const match of matches) {
+          let term = (match[1] || '').trim();
+          if (!term) continue;
+          if (excludePatterns.some(p => p.test(term))) continue;
+
+          // split by Japanese comma, take first part only (WR entries often include gloss)
+          if (term.includes('、')) term = term.split('、')[0].trim();
+          term = term.replace(/\s+/g, '');
+          if (!term || term.length > 50) continue;
+          if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
+            wrSet.add(term);
+            if (wrSet.size - weblioResults.length >= (lim - weblioResults.length)) break;
+          }
+        }
+
+        // Only push the WR additions (exclude ones already in Weblio)
+        wrResults.push(...Array.from(wrSet).filter(t => !weblioResults.includes(t)));
+        console.log('jp-translate: wr parsed', { word, count: wrResults.length, sample: wrResults.slice(0,5) });
+      } catch (e) {
+        console.warn('jp-translate: wr failed', { word, error: e?.message || e });
+      }
+    }
+
+    const combined = [...weblioResults, ...wrResults].slice(0, lim);
+    const sourcesUsed = [];
+    if (weblioResults.length > 0) sourcesUsed.push('weblio');
+    if (wrResults.length > 0) sourcesUsed.push('wordreference');
+
     res.status(200).json({
       ok: true,
-      result: weblioResults.slice(0, lim),
-      sourcesUsed: weblioResults.length > 0 ? ['weblio'] : [],
-      weblioResults
+      result: combined,
+      sourcesUsed,
+      weblioResults,
+      wrResults
     });
   } catch (err) {
     console.error('jp-translate error', err);

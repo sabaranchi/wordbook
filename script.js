@@ -1379,23 +1379,40 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
           console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
         }
 
-        // Debug: inspect raw Weblio results
+        // Debug: inspect raw results
         if (Array.isArray(data.weblioResults)) {
           console.log('[jp-translate] weblioResults', { count: data.weblioResults.length, sample: data.weblioResults.slice(0, 5) });
         }
-        
-        // Format output from Weblio results
-        let output = '';
-        
-        // Clean and normalize terms: remove internal spaces
-        const cleanTerm = (t) => String(t || '').trim().replace(/\s+/g, '');
-        
-        // Weblio results
-        if (Array.isArray(data.weblioResults) && data.weblioResults.length > 0) {
-          output = data.weblioResults.map(cleanTerm).filter(t => t).join('、');
+        if (Array.isArray(data.wrResults)) {
+          console.log('[jp-translate] wrResults', { count: data.wrResults.length, sample: data.wrResults.slice(0, 5) });
         }
-        
-        return output;
+
+        // Format output with Weblio primary, WordReference fallback
+        const cleanTerm = (t) => String(t || '').trim().replace(/\s+/g, '');
+        const ordered = [];
+        const seen = new Set();
+
+        if (Array.isArray(data.weblioResults)) {
+          for (const t of data.weblioResults) {
+            const c = cleanTerm(t);
+            if (!c || seen.has(c)) continue;
+            ordered.push(c);
+            seen.add(c);
+            if (ordered.length >= limit) break;
+          }
+        }
+
+        if (ordered.length < limit && Array.isArray(data.wrResults)) {
+          for (const t of data.wrResults) {
+            const c = cleanTerm(t);
+            if (!c || seen.has(c)) continue;
+            ordered.push(c);
+            seen.add(c);
+            if (ordered.length >= limit) break;
+          }
+        }
+
+        return ordered.join('、');
       }
       return '';
     } finally {
