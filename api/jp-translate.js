@@ -35,8 +35,9 @@ export default async function handler(req, res) {
       const html = await fetchText(weblioUrl);
       
       // Extract Japanese translations from Weblio HTML
-      // Target the main meaning section - typically in elements with class "content-explanation" or similar
-      const japanesePattern = /(?:class="(?:content-explanation|content|NetKjhead|Kejje)">|<span[^>]*>)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
+      // More specific targeting: look for meaning sections
+      // Weblio typically has meanings in specific div/span structures
+      const japanesePattern = /<span class="content">([^<]+)<\/span>/g;
       const matches = html.matchAll(japanesePattern);
       
       // Unwanted text patterns to exclude
@@ -51,6 +52,9 @@ export default async function handler(req, res) {
         /^[\s]*$/, // empty strings
         /^[\s]*\|[\s]*$/, // pipe separator
         /^\d+[\.\)]+$/, // just numbers with punctuation
+        /^\([\d]+件\)/, // (112件) pattern
+        /件\)/, // ends with 件)
+        /発音を聞く|プレーヤー再生|ピン留め|単語を追加|共有|主な意味/, // UI action texts
         /[:：][\s]*$/, // ends with colon (likely section markers)
         /^[\s]*[、。，。]+[\s]*$/, // just punctuation
         /[\?\？！！]/, // contains question/exclamation marks (likely meta text)
@@ -59,7 +63,9 @@ export default async function handler(req, res) {
         /不適切|スパム|問題があります/, // abuse/spam report keywords
         /広告|コピーライト|著作権|プライバシー|利用規約/, // page boilerplate
         /Weblio|検索|辞書|英和|和英/, // site-specific UI text
-        /^[\s]*\d+[\s]*$/ // just numbers
+        /^[\s]*\d+[\s]*$/, // just numbers
+        /音声を再生|音節|発音記号/, // pronunciation related UI
+        /クリップボード|お気に入り|単語帳/ // bookmark/clipboard UI
       ];
       
       const weblioSet = new Set();
