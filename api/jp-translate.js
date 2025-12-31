@@ -35,9 +35,9 @@ export default async function handler(req, res) {
       const html = await fetchText(weblioUrl);
       
       // Extract Japanese translations from Weblio HTML
-      // Target the main meaning/translation span: <span class="content-explanation  ej">...</span>
-      // Allow extra classes around content-explanation ej
-      const japanesePattern = /<span class="[^"]*content-explanation\s+ej[^"]*">([^<]+)<\/span>/g;
+      // Target the main meaning/translation blocks: span/div/td with class containing "content-explanation ej"
+      // Allow nested tags inside; capture inner HTML then strip tags/entities
+      const japanesePattern = /<(?:span|div|td)[^>]*class="[^"]*content-explanation\s+ej[^"]*"[^>]*>([\s\S]*?)<\/(?:span|div|td)>/gi;
       const matches = html.matchAll(japanesePattern);
       
       // Unwanted text patterns to exclude
@@ -70,7 +70,16 @@ export default async function handler(req, res) {
       
       const weblioSet = new Set();
       for (const match of matches) {
-        let term = (match[1] || '').trim();
+        const inner = match[1] || '';
+        // Strip tags and decode a few common entities
+        let term = inner
+          .replace(/<[^>]+>/g, ' ') // drop nested tags
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/&lt;/gi, '<')
+          .replace(/&gt;/gi, '>')
+          .replace(/\s+/g, ' ')
+          .trim();
         if (!term) continue;
         
         // Filter out unwanted text
