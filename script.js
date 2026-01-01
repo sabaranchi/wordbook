@@ -1385,17 +1385,17 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
         // Clean and normalize terms: remove internal spaces
         const cleanTerm = (t) => String(t || '').trim().replace(/\s+/g, '');
         
-        // Weblio results (primary)
+        // Weblio results (primary source)
         if (Array.isArray(data.weblioResults) && data.weblioResults.length > 0) {
           output += data.weblioResults.map(cleanTerm).filter(t => t).join('、');
         }
 
-        // WordReference fallback results
+        // WordReference supplementary results (both sources considered)
         if (Array.isArray(data.wrResults) && data.wrResults.length > 0) {
           const wrClean = data.wrResults.map(cleanTerm).filter(t => t).join('、');
           if (output) {
-            // Add as "それ以外の訳語（...）" format
-            output += '、それ以外の訳語（' + wrClean + '）';
+            // Add supplementary translations with separator
+            output += '、' + wrClean;
           } else {
             // If only WordReference results, just add them
             output = wrClean;
