@@ -1570,6 +1570,7 @@ function showSection(name) {
 }
 
 let debounceTimer;
+let currentRequestId = 0; // Track the latest request
 
 document.getElementById('new-word').addEventListener('input', async function () {
   clearTimeout(debounceTimer);
@@ -1584,11 +1585,20 @@ document.getElementById('new-word').addEventListener('input', async function () 
   }
 
   debounceTimer = setTimeout(async () => {
+    // Generate unique request ID for this fetch
+    const requestId = ++currentRequestId;
     const lang = 'en'; // 必要に応じて 'en-us', 'en-uk', 'en-cn' などに変更
 
     try {
       console.log('fetch開始');
       const res = await fetch(`https://cambridge-dictionaryapi.vercel.app/api/dictionary/${lang}/${word}`);
+      
+      // Check if this is still the latest request
+      if (requestId !== currentRequestId) {
+        console.log('Ignoring outdated request for:', word);
+        return;
+      }
+      
       if (!res.ok) {
         console.warn('Cambridge API returned', res.status);
         document.getElementById('new-meaning').value = '';
@@ -1602,6 +1612,12 @@ document.getElementById('new-word').addEventListener('input', async function () 
         return;
       }
       const data = await res.json();
+
+      // Check again after async operation
+      if (requestId !== currentRequestId) {
+        console.log('Ignoring outdated response for:', word);
+        return;
+      }
 
       console.log(data); // デバッグ用
       console.log(JSON.stringify(data, null, 2));
@@ -1633,6 +1649,13 @@ document.getElementById('new-word').addEventListener('input', async function () 
       // 日本語訳（候補）を取得して埋める
       try {
         const jp = await fetchJapaneseTranslations(word);
+        
+        // Final check before updating JP translation
+        if (requestId !== currentRequestId) {
+          console.log('Ignoring outdated JP translation for:', word);
+          return;
+        }
+        
         document.getElementById('new-meaning-ja').value = jp || '';
       } catch (e) {
         console.warn('JP translation fetch failed (input helper)', e);

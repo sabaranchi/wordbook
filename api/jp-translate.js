@@ -193,12 +193,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Determine sourcesUsed (both sources consulted for best translations)
-    const sourcesUsed = [];
-    if (weblioResults.length > 0) sourcesUsed.push('weblio');
-    if (wrResults.length > 0) sourcesUsed.push('wordreference');
-    if (jishoResults.length > 0) sourcesUsed.push('jisho');
-
     // --- Jisho (always fetch)
     try {
       const jishoUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`;
@@ -223,6 +217,12 @@ export default async function handler(req, res) {
     } catch (e) {
       console.warn('jp-translate: jisho failed', e);
     }
+
+    // Determine sourcesUsed (all three sources consulted for best translations)
+    const sourcesUsed = [];
+    if (weblioResults.length > 0) sourcesUsed.push('weblio');
+    if (wrResults.length > 0) sourcesUsed.push('wordreference');
+    if (jishoResults.length > 0) sourcesUsed.push('jisho');
 
     // --- Merge and sort by frequency (dedup), then by source priority
     // Create map: term -> { count, sources: [WR, Weblio, Jisho] priority }
