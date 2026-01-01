@@ -1,6 +1,6 @@
 // Server-side JP translation proxy to avoid CORS
-// Tries Weblio first, then WordReference fallback
-// Returns translations grouped by source to prevent overwrites and allow flexible formatting
+// Tries Weblio, WordReference, and Jisho
+// Returns translations sorted by frequency (deduped), then by source priority (WR > Weblio > Jisho)
 
 export default async function handler(req, res) {
   try {
@@ -14,6 +14,7 @@ export default async function handler(req, res) {
 
     const weblioResults = [];
     const wrResults = [];
+    const jishoResults = [];
 
     // --- helper: fetch text with timeout
     const fetchText = async (url) => {
@@ -26,6 +27,19 @@ export default async function handler(req, res) {
         });
         if (!r.ok) throw new Error(`http_${r.status}`);
         return await r.text();
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    // --- helper: fetch JSON with timeout
+    const fetchJson = async (url) => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
+      try {
+        const r = await fetch(url, { signal: ctrl.signal });
+        if (!r.ok) throw new Error(`http_${r.status}`);
+        return await r.json();
       } finally {
         clearTimeout(timer);
       }
@@ -183,13 +197,80 @@ export default async function handler(req, res) {
     const sourcesUsed = [];
     if (weblioResults.length > 0) sourcesUsed.push('weblio');
     if (wrResults.length > 0) sourcesUsed.push('wordreference');
+    if (jishoResults.length > 0) sourcesUsed.push('jisho');
+
+    // --- Jisho (always fetch)
+    try {
+      const jishoUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`;
+      const data = await fetchJson(jishoUrl);
+      if (data && Array.isArray(data.data)) {
+        const jSet = new Set();
+        for (const entry of data.data) {
+          if (entry && Array.isArray(entry.japanese)) {
+            for (const jp of entry.japanese) {
+              const term = (jp.word || jp.reading || '').trim();
+              if (term && /[\u3040-\u30FF\u4E00-\u9FFF]/.test(term) && term.length <= 50) {
+                jSet.add(term);
+                if (jSet.size >= lim * 2) break; // collect extra for later filtering
+              }
+            }
+            if (jSet.size >= lim * 2) break;
+          }
+        }
+        jishoResults.push(...Array.from(jSet).slice(0, lim * 2));
+        console.log(`[jp-translate] jisho found: ${jishoResults.length} results for "${word}"`);
+      }
+    } catch (e) {
+      console.warn('jp-translate: jisho failed', e);
+    }
+
+    // --- Merge and sort by frequency (dedup), then by source priority
+    // Create map: term -> { count, sources: [WR, Weblio, Jisho] priority }
+    const termFreq = new Map();
+    const sourcePriority = { wordreference: 3, weblio: 2, jisho: 1 };
+
+    // Add results from all sources
+    weblioResults.forEach(term => {
+      if (!termFreq.has(term)) termFreq.set(term, { count: 0, maxPriority: 0 });
+      const entry = termFreq.get(term);
+      entry.count += 1;
+      entry.maxPriority = Math.max(entry.maxPriority, sourcePriority.weblio);
+    });
+
+    wrResults.forEach(term => {
+      if (!termFreq.has(term)) termFreq.set(term, { count: 0, maxPriority: 0 });
+      const entry = termFreq.get(term);
+      entry.count += 1;
+      entry.maxPriority = Math.max(entry.maxPriority, sourcePriority.wordreference);
+    });
+
+    jishoResults.forEach(term => {
+      if (!termFreq.has(term)) termFreq.set(term, { count: 0, maxPriority: 0 });
+      const entry = termFreq.get(term);
+      entry.count += 1;
+      entry.maxPriority = Math.max(entry.maxPriority, sourcePriority.jisho);
+    });
+
+    // Sort by frequency (descending), then by source priority (descending)
+    const sortedTerms = Array.from(termFreq.entries())
+      .sort((a, b) => {
+        const [termA, dataA] = a;
+        const [termB, dataB] = b;
+        // First: sort by frequency (count) descending
+        if (dataB.count !== dataA.count) return dataB.count - dataA.count;
+        // Second: sort by max source priority descending (WR > Weblio > Jisho)
+        return dataB.maxPriority - dataA.maxPriority;
+      })
+      .map(([term]) => term)
+      .slice(0, lim);
 
     res.status(200).json({
       ok: true,
-      result: [...weblioResults, ...wrResults].slice(0, lim),
+      result: sortedTerms,
       sourcesUsed,
       weblioResults,
-      wrResults
+      wrResults,
+      jishoResults
     });
   } catch (err) {
     console.error('jp-translate error', err);

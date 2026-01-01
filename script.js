@@ -1379,27 +1379,15 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
           console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
         }
         
-        // Format output based on sources used
+        // Format output based on sorted results (already sorted by frequency and priority)
         let output = '';
         
         // Clean and normalize terms: remove internal spaces
         const cleanTerm = (t) => String(t || '').trim().replace(/\s+/g, '');
         
-        // Weblio results (primary source)
-        if (Array.isArray(data.weblioResults) && data.weblioResults.length > 0) {
-          output += data.weblioResults.map(cleanTerm).filter(t => t).join('、');
-        }
-
-        // WordReference supplementary results (both sources considered)
-        if (Array.isArray(data.wrResults) && data.wrResults.length > 0) {
-          const wrClean = data.wrResults.map(cleanTerm).filter(t => t).join('、');
-          if (output) {
-            // Add supplementary translations with separator
-            output += '、' + wrClean;
-          } else {
-            // If only WordReference results, just add them
-            output = wrClean;
-          }
+        // Result is already sorted by frequency (deduped) and source priority
+        if (Array.isArray(data.result) && data.result.length > 0) {
+          output = data.result.map(cleanTerm).filter(t => t).join('、');
         }
         
         return output;
