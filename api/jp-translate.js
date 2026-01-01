@@ -102,8 +102,8 @@ export default async function handler(req, res) {
         
         // Extract Japanese translations from WordReference HTML
         // Target <td class="ToWrd"> elements and capture content before first tag (br/em/span)
-        const toWrdPattern = /<td[^>]*class="ToWrd"[^>]*>(.*?)(?:<(?:br|em|span)|<\/td>)/gi;
-        const matches = mainHtml.matchAll(toWrdPattern);
+        const toWrdPattern = /<td[^>]*class=["'][^"']*ToWrd[^"']*["'][^>]*>([\s\S]*?)(?:<(?:br|em|span)|<\/td>)/gi;
+        const matches = [...mainHtml.matchAll(toWrdPattern)];
         
         // Unwanted text patterns to exclude
         const excludePatterns = [
@@ -142,9 +142,6 @@ export default async function handler(req, res) {
           // e.g., "LOL、(笑)、笑、w" → ["LOL", "(笑)", "笑", "w"]
           const candidates = rawText.split(/[、，]/);
           
-          for (let term of candidates) {
-            term = term.trim();
-            if (!term) continue;
           for (let term of candidates) {
             term = term.trim();
             if (!term) continue;
