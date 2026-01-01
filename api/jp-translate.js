@@ -101,12 +101,11 @@ export default async function handler(req, res) {
         const mainHtml = mainSectionMatch[0] || html;
         
         // Extract Japanese translations from WordReference HTML
-        // Broader pattern to capture Japanese text from table cells and other structures
-        // Match any content between > and < that contains Japanese characters
-        const japanesePattern = />([^<]*[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF][^<]*)</g;
-        const matches = mainHtml.matchAll(japanesePattern);
+        // Target <td class="ToWrd"> elements and capture content before first tag (br/em/span)
+        const toWrdPattern = /<td[^>]*class="ToWrd"[^>]*>(.*?)(?:<(?:br|em|span)|<\/td>)/gi;
+        const matches = mainHtml.matchAll(toWrdPattern);
         
-        // Unwanted text patterns to exclude (more permissive to avoid false negatives)
+        // Unwanted text patterns to exclude
         const excludePatterns = [
           /^[\s]*主な訳語[\s]*$/i,
           /^[\s]*それ以外の訳語[\s]*$/i,
@@ -118,12 +117,15 @@ export default async function handler(req, res) {
           /^[\s]*$/, // empty strings
           /^[\s]*\|[\s]*$/, // pipe separator
           /^\d+[\.\)]+$/, // just numbers with punctuation
+          /[:：]/, // contains colon or full-width colon (likely section markers or descriptive text)
           /^[\s]*[、。，。]+[\s]*$/, // just punctuation
-          /連絡|報告|削除|編集|送信|問題/, // action verbs/UI text
+          /[\?\？！！]/, // contains question/exclamation marks (likely meta text)
+          /。[\s]*$/, // ends with sentence-ending punctuation (full-width period) - likely UI text
+          /連絡|報告|削除|編集|送信|問題/, // action verbs/UI text like "連絡する", "報告する"
           /不適切|スパム|問題があります/, // abuse/spam report keywords
-          /、.{0,20}(広告|コピーライト|著作権|プライバシー)/, // page boilerplate
-          /^(広告|コピーライト|著作権|プライバシー)/, // page footer/header
-          /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright
+          /、.{0,20}(広告|コピーライト|著作権|プライバシー)/, // page boilerplate with comma separator
+          /^(広告|コピーライト|著作権|プライバシー)/, // page footer/header text
+          /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright keywords
         ];
         
         const baseSet = new Set(weblioResults);
@@ -132,35 +134,46 @@ export default async function handler(req, res) {
         const remaining = Math.max(lim - weblioResults.length, Math.ceil(lim / 2));
         for (const match of matches) {
           if (wrSet.size >= remaining) break;
-          let term = (match[1] || '').trim();
-          if (!term) continue;
+          // match[1] contains the text content before the first tag
+          const rawText = (match[1] || '').trim();
+          if (!rawText) continue;
           
-          // Filter out unwanted text
-          if (excludePatterns.some(pat => pat.test(term))) {
-            continue;
+          // Split by common Japanese separators to get individual terms
+          // e.g., "LOL、(笑)、笑、w" → ["LOL", "(笑)", "笑", "w"]
+          const candidates = rawText.split(/[、，]/);
+          
+          for (let term of candidates) {
+            term = term.trim();
+            if (!term) continue;
+          for (let term of candidates) {
+            term = term.trim();
+            if (!term) continue;
+            
+            // Filter out unwanted text
+            if (excludePatterns.some(pat => pat.test(term))) {
+              continue;
+            }
+            
+            // Remove parentheses if present (e.g., "(笑)" → "笑")
+            term = term.replace(/^[\(（]*(.*?)[\)）]*$/, '$1').trim();
+            
+            // Normalize: remove leading/trailing spaces and compress internal spaces
+            term = term.replace(/\s+/g, '');
+            if (!term) continue;
+            
+            // Additional length check: skip overly long terms (likely descriptions)
+            if (term.length > 50) {
+              continue;
+            }
+            
+            // Filter by Japanese characters presence and avoid duplicates with Weblio
+            if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term) && !baseSet.has(term)) {
+              wrSet.add(term);
+              baseSet.add(term);
+              if (wrSet.size >= remaining) break;
+            }
           }
-          
-          // Split by 、(Japanese comma) and take only the first part to avoid mixed meanings
-          // e.g., "犬 、 イヌ科の動物" → take only "犬"
-          if (term.includes('、')) {
-            term = term.split('、')[0].trim();
-          }
-          
-          // Normalize: remove leading/trailing spaces and compress internal spaces
-          term = term.replace(/\s+/g, '');
-          if (!term) continue;
-          
-          // Additional length check: skip overly long terms (likely descriptions)
-          if (term.length > 50) {
-            continue;
-          }
-          
-          // Filter by Japanese characters presence and avoid duplicates with Weblio
-          if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term) && !baseSet.has(term)) {
-            wrSet.add(term);
-            baseSet.add(term);
-            if (wrSet.size >= remaining) break;
-          }
+          if (wrSet.size >= remaining) break;
         }
         wrResults.push(...Array.from(wrSet));
         console.log(`[jp-translate] wordreference found: ${wrResults.length} results for "${word}"`);
