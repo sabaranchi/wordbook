@@ -15,6 +15,7 @@ export default async function handler(req, res) {
     const weblioResults = [];
     const wrResults = [];
 
+    // --- helpers ---
     // --- helper: fetch text with timeout
     const fetchText = async (url) => {
       const ctrl = new AbortController();
@@ -54,43 +55,44 @@ export default async function handler(req, res) {
       return decoded.replace(/\s+/g, ' ').trim();
     };
 
-    // --- Weblio PRIMARY: scrape English-Japanese translation blocks
-    try {
-      const weblioUrl = `https://ejje.weblio.jp/content/${encodeURIComponent(word)}`;
-      const html = await fetchText(weblioUrl);
+    // --- Fetch both sources in parallel ---
+    const fetchWeblio = async () => {
+      try {
+        const weblioUrl = `https://ejje.weblio.jp/content/${encodeURIComponent(word)}`;
+        const html = await fetchText(weblioUrl);
 
-      // Flexible capture for spans/divs/tds with class containing "content-explanation ej"
-      const weblioPattern = /<(?:span|div|td)[^>]*class\s*=\s*["'][^"']*content-explanation\s+ej[^"']*["'][^>]*>([\s\S]*?)<\/\s*(?:span|div|td)\s*>/gi;
-      const wlSet = new Set();
-      let match;
-      while ((match = weblioPattern.exec(html)) && wlSet.size < lim) {
-        const inner = match[1] || '';
-        const textBlock = stripTagsAndDecode(inner);
-        if (!textBlock) continue;
+        // Flexible capture for spans/divs/tds with class containing "content-explanation ej"
+        const weblioPattern = /<(?:span|div|td)[^>]*class\s*=\s*["'][^"']*content-explanation\s+ej[^"']*["'][^>]*>([\s\S]*?)<\/\s*(?:span|div|td)\s*>/gi;
+        const wlSet = new Set();
+        let match;
+        while ((match = weblioPattern.exec(html)) && wlSet.size < lim) {
+          const inner = match[1] || '';
+          const textBlock = stripTagsAndDecode(inner);
+          if (!textBlock) continue;
 
-        // Split on common separators to capture multiple translations in one block
-        const candidates = textBlock.split(/[、；;，]/);
-        for (const raw of candidates) {
-          let term = decodeHtmlEntities(raw || '').replace(/\s+/g, ' ').trim();
-          term = term.replace(/^[・•●◆▶▷◼■□\-–—·•\s]+/, '').replace(/[・•●◆▶▷◼■□\-–—·•\s]+$/, '');
-          if (!term) continue;
-          term = term.replace(/\s+/g, '');
-          if (!term) continue;
-          if (!(/[\u3040-\u30FF\u4E00-\u9FFF]/.test(term))) continue;
-          if (term.length > 50) continue;
-          wlSet.add(term);
-          if (wlSet.size >= lim) break;
+          // Split on common separators to capture multiple translations in one block
+          const candidates = textBlock.split(/[、；;，]/);
+          for (const raw of candidates) {
+            let term = decodeHtmlEntities(raw || '').replace(/\s+/g, ' ').trim();
+            term = term.replace(/^[・•●◆▶▷◼■□\-–—·•\s]+/, '').replace(/[・•●◆▶▷◼■□\-–—·•\s]+$/, '');
+            if (!term) continue;
+            term = term.replace(/\s+/g, '');
+            if (!term) continue;
+            if (!(/[\u3040-\u30FF\u4E00-\u9FFF]/.test(term))) continue;
+            if (term.length > 50) continue;
+            wlSet.add(term);
+            if (wlSet.size >= lim) break;
+          }
         }
+
+        return Array.from(wlSet).slice(0, lim);
+      } catch (e) {
+        console.warn('jp-translate: weblio failed', e);
+        return [];
       }
+    };
 
-      weblioResults.push(...Array.from(wlSet).slice(0, lim));
-    } catch (e) {
-      console.warn('jp-translate: weblio failed', e);
-    }
-
-    // --- WordReference fallback (always fetch to supplement Weblio)
-    // This ensures we capture alternative translations even when Weblio returns results
-    if (weblioResults.length < lim) {
+    const fetchWordReference = async () => {
       try {
         const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
         const html = await fetchText(wrUrl);
@@ -128,11 +130,9 @@ export default async function handler(req, res) {
           /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright keywords
         ];
         
-        const baseSet = new Set(weblioResults);
         const wrSet = new Set();
-        const remaining = lim - weblioResults.length;
         for (const match of matches) {
-          if (wrSet.size >= remaining) break;
+          if (wrSet.size >= lim) break;
           let term = (match[1] || '').trim();
           if (!term) continue;
           
@@ -156,16 +156,33 @@ export default async function handler(req, res) {
             continue;
           }
           
-          // Filter by Japanese characters presence and avoid duplicates with Weblio
-          if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term) && !baseSet.has(term)) {
+          // Filter by Japanese characters presence
+          if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(term)) {
             wrSet.add(term);
-            baseSet.add(term);
-            if (wrSet.size >= remaining) break;
+            if (wrSet.size >= lim) break;
           }
         }
-        wrResults.push(...Array.from(wrSet));
+        return Array.from(wrSet);
       } catch (e) {
         console.warn('jp-translate: wordreference failed', e);
+        return [];
+      }
+    };
+
+    // Execute both fetches in parallel
+    const [wlResults, wrRawResults] = await Promise.all([fetchWeblio(), fetchWordReference()]);
+    
+    // Prioritize Weblio results
+    weblioResults.push(...wlResults);
+    
+    // Add WordReference results, deduplicating against Weblio and respecting limit
+    const baseSet = new Set(weblioResults);
+    const remaining = lim - weblioResults.length;
+    for (const term of wrRawResults) {
+      if (wrResults.length >= remaining) break;
+      if (!baseSet.has(term)) {
+        wrResults.push(term);
+        baseSet.add(term);
       }
     }
 
