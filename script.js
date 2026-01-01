@@ -1378,41 +1378,31 @@ async function fetchJapaneseTranslations(enWord, limit = 5) {
         if (Array.isArray(data.sourcesUsed) && data.sourcesUsed.length) {
           console.log('[jp-translate] sourcesUsed:', data.sourcesUsed.join(', '));
         }
-
-        // Debug: inspect raw results
-        if (Array.isArray(data.weblioResults)) {
-          console.log('[jp-translate] weblioResults', { count: data.weblioResults.length, sample: data.weblioResults.slice(0, 5) });
-        }
-        if (Array.isArray(data.wrResults)) {
-          console.log('[jp-translate] wrResults', { count: data.wrResults.length, sample: data.wrResults.slice(0, 5) });
-        }
-
-        // Format output with Weblio primary, WordReference fallback
+        
+        // Format output based on sources used
+        let output = '';
+        
+        // Clean and normalize terms: remove internal spaces
         const cleanTerm = (t) => String(t || '').trim().replace(/\s+/g, '');
-        const ordered = [];
-        const seen = new Set();
-
-        if (Array.isArray(data.weblioResults)) {
-          for (const t of data.weblioResults) {
-            const c = cleanTerm(t);
-            if (!c || seen.has(c)) continue;
-            ordered.push(c);
-            seen.add(c);
-            if (ordered.length >= limit) break;
-          }
+        
+        // Weblio results (primary)
+        if (Array.isArray(data.weblioResults) && data.weblioResults.length > 0) {
+          output += data.weblioResults.map(cleanTerm).filter(t => t).join('、');
         }
 
-        if (ordered.length < limit && Array.isArray(data.wrResults)) {
-          for (const t of data.wrResults) {
-            const c = cleanTerm(t);
-            if (!c || seen.has(c)) continue;
-            ordered.push(c);
-            seen.add(c);
-            if (ordered.length >= limit) break;
+        // WordReference fallback results
+        if (Array.isArray(data.wrResults) && data.wrResults.length > 0) {
+          const wrClean = data.wrResults.map(cleanTerm).filter(t => t).join('、');
+          if (output) {
+            // Add as "それ以外の訳語（...）" format
+            output += '、それ以外の訳語（' + wrClean + '）';
+          } else {
+            // If only WordReference results, just add them
+            output = wrClean;
           }
         }
-
-        return ordered.join('、');
+        
+        return output;
       }
       return '';
     } finally {
