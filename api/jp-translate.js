@@ -149,7 +149,11 @@ export default async function handler(req, res) {
           /不適切|スパム|問題があります/,
           /広告|コピーライト|著作権|プライバシー/,
           /,[\s]*(広告|著作権)/,
-          /WordReference|Forum|Compound Forms|Inflections/ // site UI text
+          /WordReference|Forum|Compound Forms|Inflections/, // site UI text
+          /オンライン言語辞典|英和辞書|辞書|言語/, // dictionary/site info
+          /日本語-英語|英語-日本語|〜-〜/, // language pair labels
+          /もっと見る|詳細|翻訳/, // navigation/UI
+          /-[\s]*[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+[\s]*$/ // ends with dash and Japanese (likely label)
         ];
 
         const wrSet = new Set(weblioResults); // avoid duplicates with Weblio
