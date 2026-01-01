@@ -88,7 +88,8 @@ export default async function handler(req, res) {
       console.warn('jp-translate: weblio failed', e);
     }
 
-    // --- WordReference fallback (only if Weblio results are insufficient)
+    // --- WordReference fallback (always fetch to supplement Weblio)
+    // This ensures we capture alternative translations even when Weblio returns results
     if (weblioResults.length < lim) {
       try {
         const wrUrl = `https://www.wordreference.com/enja/${encodeURIComponent(word)}`;
