@@ -128,8 +128,8 @@ export default async function handler(req, res) {
         // Extract main translations section only (before "Additional Translations")
         const mainHtml = (html.split(/それ以外の訳語|Additional Translations/i)[0]) || html;
         
-        // Broader pattern: capture any text containing Japanese characters
-        const japanesePattern = />([^<]*[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+[^<]*)</g;
+        // Target ToWrd class specifically (main translation column in WordReference)
+        const japanesePattern = /<td[^>]*class="[^"]*ToWrd[^"]*"[^>]*>([^<]+)/g;
         const matches = mainHtml.matchAll(japanesePattern);
 
         const excludePatterns = [
