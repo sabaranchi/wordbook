@@ -84,6 +84,7 @@ export default async function handler(req, res) {
       }
 
       weblioResults.push(...Array.from(wlSet).slice(0, lim));
+      console.log(`[jp-translate] weblio found: ${weblioResults.length} results for "${word}"`);
     } catch (e) {
       console.warn('jp-translate: weblio failed', e);
     }
@@ -100,11 +101,12 @@ export default async function handler(req, res) {
         const mainHtml = mainSectionMatch[0] || html;
         
         // Extract Japanese translations from WordReference HTML
-        // More flexible pattern to capture Japanese text from various HTML structures
-        const japanesePattern = /(?:class="(?:TarEng|TarTop|ToWrd)">|<td[^>]*>\s*(?:<[^>]*>)*)([^<]*(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)[^<]*)/g;
+        // Broader pattern to capture Japanese text from table cells and other structures
+        // Match any content between > and < that contains Japanese characters
+        const japanesePattern = />([^<]*[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF][^<]*)</g;
         const matches = mainHtml.matchAll(japanesePattern);
         
-        // Unwanted text patterns to exclude
+        // Unwanted text patterns to exclude (more permissive to avoid false negatives)
         const excludePatterns = [
           /^[\s]*主な訳語[\s]*$/i,
           /^[\s]*それ以外の訳語[\s]*$/i,
@@ -116,15 +118,12 @@ export default async function handler(req, res) {
           /^[\s]*$/, // empty strings
           /^[\s]*\|[\s]*$/, // pipe separator
           /^\d+[\.\)]+$/, // just numbers with punctuation
-          /[:：]/, // contains colon or full-width colon (likely section markers or descriptive text)
           /^[\s]*[、。，。]+[\s]*$/, // just punctuation
-          /[\?\？！！]/, // contains question/exclamation marks (likely meta text)
-          /。[\s]*$/, // ends with sentence-ending punctuation (full-width period) - likely UI text
-          /連絡|報告|削除|編集|送信|問題/, // action verbs/UI text like "連絡する", "報告する"
+          /連絡|報告|削除|編集|送信|問題/, // action verbs/UI text
           /不適切|スパム|問題があります/, // abuse/spam report keywords
-          /、.{0,20}(広告|コピーライト|著作権|プライバシー)/, // page boilerplate with comma separator
-          /^(広告|コピーライト|著作権|プライバシー)/, // page footer/header text
-          /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright keywords
+          /、.{0,20}(広告|コピーライト|著作権|プライバシー)/, // page boilerplate
+          /^(広告|コピーライト|著作権|プライバシー)/, // page footer/header
+          /,[\s]*(広告|著作権)/ // English-style comma with ad/copyright
         ];
         
         const baseSet = new Set(weblioResults);
@@ -164,6 +163,7 @@ export default async function handler(req, res) {
           }
         }
         wrResults.push(...Array.from(wrSet));
+        console.log(`[jp-translate] wordreference found: ${wrResults.length} results for "${word}"`);
       } catch (e) {
         console.warn('jp-translate: wordreference failed', e);
       }
