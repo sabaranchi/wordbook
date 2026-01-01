@@ -144,6 +144,7 @@ export default async function handler(req, res) {
           /^[\s]*\|[\s]*$/, // pipe separator
           /^\d+[\.\)]+$/, // just numbers with punctuation
           /^[\s]*[、。，。]+[\s]*$/, // just punctuation
+          /[:：][\s]*$/, // ends with colon (section headers)
           /。[\s]*$/, // ends with full-width period
           /連絡|報告|削除|編集|送信|問題/,
           /不適切|スパム|問題があります/,
@@ -153,6 +154,8 @@ export default async function handler(req, res) {
           /オンライン言語辞典|英和辞書|辞書|言語/, // dictionary/site info
           /日本語-英語|英語-日本語|〜-〜/, // language pair labels
           /もっと見る|詳細|翻訳/, // navigation/UI
+          /フォーラム|以下の単語も見る|最近の検索/, // forum/navigation UI
+          /見る[\s]*[:：]|検索[\s]*[:：]/, // section labels with colon
           /-[\s]*[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+[\s]*$/ // ends with dash and Japanese (likely label)
         ];
 
