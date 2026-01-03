@@ -116,6 +116,14 @@ async function handleFileImport() {
         appendLog(`  ⚠ JP translation error for "${word}": ${e.message}`);
       }
 
+      // Check if JP translation was successfully fetched
+      if (!meaning_jp || meaning_jp.trim() === '') {
+        appendLog(`  ✗ FAILED: "${word}" - No Japanese translation found`);
+        failCount++;
+        failedWords.push(word);
+        continue;
+      }
+
       // Create word object
       const newWord = {
         userId,
