@@ -1565,6 +1565,8 @@ document.getElementById('add-word-form').addEventListener('submit', function(e) 
 function showSection(name) {
   document.getElementById('add-section').style.display = name === 'add' ? 'block' : 'none';
   document.getElementById('quiz-section').style.display = name === 'quiz' ? 'block' : 'none';
+  const batchSection = document.getElementById('batch-import-section');
+  if (batchSection) batchSection.style.display = name === 'batch-import' ? 'block' : 'none';
 
   if (name === 'quiz') startQuiz();
 }

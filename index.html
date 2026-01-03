@@ -65,20 +65,34 @@
       <textarea id="new-example" placeholder="Example" rows="3"></textarea>
       <input type="text" id="new-category" placeholder="Category" />
       <button type="submit" id="add-button">Add</button>
+      <button type="button" id="open-import-btn" onclick="showSection('batch-import')" style="margin-left: 10px; background: #007bff; color: white;">Import from File</button>
     </form>
+  </section>
 
-    <!-- ファイルアップロードセクション -->
-    <div id="batch-import-section" style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ccc;">
-      <h3>Batch Import from File</h3>
-      <p style="font-size: 0.9em; color: #666;">一行に一単語の英単語テキストファイルをアップロード</p>
+  <!-- 独立したバッチインポートセクション -->
+  <section id="batch-import-section" style="display:none;">
+    <h2>Batch Import from File</h2>
+    <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">一行に一単語の英単語テキストファイルをアップロード</p>
+    
+    <div style="margin-bottom: 20px;">
       <input type="file" id="word-file-input" accept=".txt" />
-      <button type="button" id="import-btn" onclick="handleFileImport()">Import Words</button>
-      <div id="import-progress" style="display:none; margin-top: 10px;">
-        <div id="import-status" style="font-size: 0.9em; color: #666; margin-bottom: 5px;"></div>
-        <div id="import-bar" style="width: 100%; height: 4px; background: #ddd; border-radius: 2px; overflow: hidden;">
-          <div id="import-fill" style="height: 100%; background: #4CAF50; width: 0%; transition: width 0.3s;"></div>
-        </div>
+      <button type="button" id="import-btn" onclick="handleFileImport()" style="margin-left: 10px;">Import Words</button>
+      <button type="button" onclick="showSection('add')" style="margin-left: 10px; background: #6c757d; color: white;">Back to Add Word</button>
+    </div>
+
+    <div id="import-progress" style="display:none; margin-bottom: 20px;">
+      <div id="import-status" style="font-size: 0.9em; color: #666; margin-bottom: 5px;"></div>
+      <div id="import-bar" style="width: 100%; height: 8px; background: #ddd; border-radius: 4px; overflow: hidden;">
+        <div id="import-fill" style="height: 100%; background: #4CAF50; width: 0%; transition: width 0.3s;"></div>
       </div>
+    </div>
+
+    <!-- ログ表示エリア -->
+    <div id="import-log-container" style="display:none; margin-top: 20px;">
+      <h3>Import Log</h3>
+      <div id="import-summary" style="margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 0.9em;"></div>
+      <textarea id="import-log" readonly style="width: 100%; height: 300px; font-family: monospace; font-size: 0.85em; padding: 10px; border: 1px solid #ccc; border-radius: 4px;"></textarea>
+      <button type="button" id="download-failed-btn" onclick="downloadFailedWords()" style="margin-top: 10px; background: #dc3545; color: white;">Download Failed/Skipped Words</button>
     </div>
   </section>
 

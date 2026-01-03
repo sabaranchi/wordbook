@@ -1,5 +1,9 @@
 // Batch import function for adding multiple words from a text file
 
+// Store failed and skipped words for download
+let failedWords = [];
+let skippedWords = [];
+
 async function handleFileImport() {
   const fileInput = document.getElementById('word-file-input');
   if (!fileInput || !fileInput.files || !fileInput.files[0]) {
@@ -23,16 +27,30 @@ async function handleFileImport() {
 
   console.log(`[Batch Import] Found ${words.length} words to import`);
   
+  // Reset log arrays
+  failedWords = [];
+  skippedWords = [];
+  
   // Show progress UI
   const progressDiv = document.getElementById('import-progress');
   const progressBar = document.getElementById('import-fill');
   const statusDiv = document.getElementById('import-status');
+  const logContainer = document.getElementById('import-log-container');
+  const logTextarea = document.getElementById('import-log');
+  
   progressDiv.style.display = 'block';
   progressBar.style.width = '0%';
+  logContainer.style.display = 'block';
+  logTextarea.value = '=== Batch Import Started ===\n';
 
   let successCount = 0;
   let skipCount = 0;
   let failCount = 0;
+
+  const appendLog = (message) => {
+    logTextarea.value += message + '\n';
+    logTextarea.scrollTop = logTextarea.scrollHeight;
+  };
 
   // Import each word
   for (let i = 0; i < words.length; i++) {
@@ -45,10 +63,13 @@ async function handleFileImport() {
     try {
       // Check if word already exists
       if (customWords.some(w => w.word === word)) {
-        console.log(`[Batch Import] Skipping duplicate: "${word}"`);
+        appendLog(`⊘ SKIPPED: "${word}" (already exists)`);
         skipCount++;
+        skippedWords.push(word);
         continue;
       }
+
+      appendLog(`→ Processing: "${word}"...`);
 
       // Fetch English definition and JP translation
       let meaning = '';
@@ -81,16 +102,18 @@ async function handleFileImport() {
           if (Array.isArray(data.pos)) {
             category = data.pos.join(', ');
           }
+        } else {
+          appendLog(`  ⚠ Definition fetch returned ${res.status} for "${word}"`);
         }
       } catch (e) {
-        console.warn(`[Batch Import] Failed to fetch definition for "${word}":`, e);
+        appendLog(`  ⚠ Definition fetch error for "${word}": ${e.message}`);
       }
 
       // Fetch JP translation
       try {
         meaning_jp = await fetchJapaneseTranslations(word);
       } catch (e) {
-        console.warn(`[Batch Import] Failed to fetch JP translation for "${word}":`, e);
+        appendLog(`  ⚠ JP translation error for "${word}": ${e.message}`);
       }
 
       // Create word object
@@ -124,19 +147,24 @@ async function handleFileImport() {
           userId: newWord.userId
         });
       } catch (e) {
-        console.warn(`[Batch Import] Failed to add "${word}" to Sheets:`, e);
+        appendLog(`  ✗ Sheets save error for "${word}": ${e.message}`);
+        failCount++;
+        failedWords.push(word);
+        continue;
       }
 
       // Update local state
       customWords.push(newWord);
       successCount++;
-      console.log(`[Batch Import] Successfully added: "${word}"`);
+      appendLog(`  ✓ SUCCESS: "${word}" added`);
 
       // Small delay between requests to avoid overwhelming the server
       await new Promise(resolve => setTimeout(resolve, 500));
 
     } catch (err) {
       failCount++;
+      failedWords.push(word);
+      appendLog(`✗ ERROR: "${word}" - ${err.message}`);
       console.error(`[Batch Import] Error processing "${word}":`, err);
     }
   }
@@ -144,14 +172,62 @@ async function handleFileImport() {
   // Update final UI
   progressBar.style.width = '100%';
   statusDiv.textContent = `完了: 成功 ${successCount}件、スキップ ${skipCount}件、エラー ${failCount}件`;
+  
+  appendLog('\n=== Batch Import Completed ===');
+  appendLog(`✓ Success: ${successCount}`);
+  appendLog(`⊘ Skipped: ${skipCount}`);
+  appendLog(`✗ Failed: ${failCount}`);
+
+  // Update summary
+  const summaryDiv = document.getElementById('import-summary');
+  summaryDiv.innerHTML = `
+    <strong>インポート完了</strong><br>
+    成功: <span style="color: green;">${successCount}件</span> | 
+    スキップ: <span style="color: orange;">${skipCount}件</span> | 
+    失敗: <span style="color: red;">${failCount}件</span>
+  `;
+
+  // Show download button only if there are failed/skipped words
+  const downloadBtn = document.getElementById('download-failed-btn');
+  if (failedWords.length > 0 || skippedWords.length > 0) {
+    downloadBtn.style.display = 'inline-block';
+  } else {
+    downloadBtn.style.display = 'none';
+  }
 
   // Refresh UI
   renderWords();
   updateProgressBar();
+}
 
-  // Reset file input and hide progress after 2 seconds
-  setTimeout(() => {
-    fileInput.value = '';
-    progressDiv.style.display = 'none';
-  }, 2000);
+function downloadFailedWords() {
+  const lines = [];
+  
+  if (skippedWords.length > 0) {
+    lines.push('# Skipped words (already exist)');
+    skippedWords.forEach(w => lines.push(w));
+    lines.push('');
+  }
+  
+  if (failedWords.length > 0) {
+    lines.push('# Failed words (errors during import)');
+    failedWords.forEach(w => lines.push(w));
+  }
+
+  if (lines.length === 0) {
+    alert('ダウンロードする単語がありません');
+    return;
+  }
+
+  const content = lines.join('\n');
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `failed-skipped-words-${new Date().toISOString().slice(0,10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
