@@ -448,6 +448,83 @@ section {
   font-size: 1.1rem;
 }
 
+/* ========== Memorize Styles ========== */
+#memorize-area {
+  transition: background-color 0.3s ease;
+  padding: 1rem;
+  border-radius: 8px;
+  min-height: 200px;
+}
+
+.memorize-card-container {
+  width: 100%;
+  max-width: 500px;
+  margin: 2rem auto;
+  padding: 1rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.memorize-front-content,
+.memorize-back-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.memorize-word {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: white;
+}
+
+.memorize-meaning {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: white;
+}
+
+.memorize-example {
+  font-size: 0.95rem;
+  opacity: 0.9;
+  color: white;
+}
+
+.play-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+}
+
+.answer-btn {
+  min-width: 150px;
+  min-height: 50px;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.answer-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.answer-no {
+  background-color: #ffcccc !important;
+  color: #cc0000 !important;
+}
+
+.answer-yes {
+  background-color: #ccffcc !important;
+  color: #00cc00 !important;
+}
 .quiz-stats-correct {
   color: #4CAF50;
   font-weight: bold;
