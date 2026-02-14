@@ -1292,6 +1292,81 @@ function checkAnswer(selected, correct, word) {
   }, 500);
 }
 
+//------------------------------------------
+// 📘 Memorize mode (all words once, random)
+//------------------------------------------
+let memorizeQueue = [];
+let memorizeIndex = 0;
+
+function startMemorize() {
+  const area = document.getElementById('memorize-area');
+  if (!area) return;
+
+  const myWords = customWords.filter(w => w.userId === userId);
+  if (myWords.length === 0) {
+    area.innerHTML = '<p>単語がありません。まず単語を追加してください。</p>';
+    return;
+  }
+
+  memorizeQueue = shuffle([...myWords]);
+  memorizeIndex = 0;
+  renderMemorizeCard();
+}
+
+function getFirstExample(wordObj) {
+  if (!wordObj) return '';
+  let ex = String(wordObj.example || '').replace(/<br\s*\/?>/gi, '\n');
+  const lines = ex.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  return lines.length > 0 ? lines[0] : '';
+}
+
+function renderMemorizeCard() {
+  const area = document.getElementById('memorize-area');
+  if (!area) return;
+
+  if (memorizeIndex >= memorizeQueue.length) {
+    area.innerHTML = `
+      <h3>Memorize completed</h3>
+      <p>すべての単語を一度表示しました。</p>
+      <button onclick="startMemorize()">もう一度</button>
+      <button onclick="showSection('add')" style="margin-left: 10px;">戻る</button>
+    `;
+    return;
+  }
+
+  const wordObj = memorizeQueue[memorizeIndex];
+  const example = getFirstExample(wordObj) || '例文なし';
+  const progress = memorizeIndex + 1;
+  const total = memorizeQueue.length;
+  const percentage = Math.round((progress / total) * 100);
+
+  area.innerHTML = `
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-size: 0.9em; color: #666;">進捗: <strong>${progress} / ${total}</strong></span>
+        <span style="font-size: 0.85em; color: #999;">${percentage}%</span>
+      </div>
+      <div style="width: 100%; height: 6px; background: #e9ecef; border-radius: 3px; overflow: hidden;">
+        <div style="height: 100%; background: #007bff; width: ${percentage}%; transition: width 0.3s;"></div>
+      </div>
+    </div>
+    
+    <h2 style="margin: 20px 0;">${wordObj.word || ''}</h2>
+    <div style="padding: 15px; background: #f8f9fa; border-radius: 6px; margin-bottom: 20px;">
+      <strong>Example:</strong><br>
+      <span style="color: #555;">${example.replace(/\n/g, '<br>')}</span>
+    </div>
+    <div style="margin-top: 15px;">
+      <button onclick="nextMemorize()" style="padding: 10px 20px; font-size: 1em;">${memorizeIndex + 1 === memorizeQueue.length ? 'Finish' : 'Next'}</button>
+    </div>
+  `;
+}
+
+function nextMemorize() {
+  memorizeIndex += 1;
+  renderMemorizeCard();
+}
+
 function shuffle(arr) {
   // Fisher–Yates shuffle
   const a = Array.isArray(arr) ? arr.slice() : [];
@@ -1567,8 +1642,11 @@ function showSection(name) {
   document.getElementById('quiz-section').style.display = name === 'quiz' ? 'block' : 'none';
   const batchSection = document.getElementById('batch-import-section');
   if (batchSection) batchSection.style.display = name === 'batch-import' ? 'block' : 'none';
+  const memorizeSection = document.getElementById('memorize-section');
+  if (memorizeSection) memorizeSection.style.display = name === 'memorize' ? 'block' : 'none';
 
   if (name === 'quiz') startQuiz();
+  if (name === 'memorize') startMemorize();
 }
 
 let debounceTimer;
