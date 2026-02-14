@@ -1297,6 +1297,7 @@ function checkAnswer(selected, correct, word) {
 //------------------------------------------
 let memorizeQueue = [];
 let memorizeIndex = 0;
+let memorizeFlipped = false;
 
 function startMemorize() {
   const area = document.getElementById('memorize-area');
@@ -1310,6 +1311,7 @@ function startMemorize() {
 
   memorizeQueue = shuffle([...myWords]);
   memorizeIndex = 0;
+  memorizeFlipped = false;
   renderMemorizeCard();
 }
 
@@ -1327,7 +1329,7 @@ function renderMemorizeCard() {
   if (memorizeIndex >= memorizeQueue.length) {
     area.innerHTML = `
       <h3>Memorize completed</h3>
-      <p>すべての単語を一度表示しました。</p>
+      <p>すべての単語を確認しました。</p>
       <button onclick="startMemorize()">もう一度</button>
       <button onclick="showSection('add')" style="margin-left: 10px;">戻る</button>
     `;
@@ -1335,10 +1337,24 @@ function renderMemorizeCard() {
   }
 
   const wordObj = memorizeQueue[memorizeIndex];
-  const example = getFirstExample(wordObj) || '例文なし';
   const progress = memorizeIndex + 1;
   const total = memorizeQueue.length;
   const percentage = Math.round((progress / total) * 100);
+  
+  let jpTranslation = '';
+  if (wordObj.jp_translation && wordObj.jp_translation.length > 0) {
+    jpTranslation = wordObj.jp_translation[0];
+  }
+
+  let cardContent = '';
+  if (!memorizeFlipped) {
+    cardContent = `<h1 style="font-size: 3em; color: #007bff;">${wordObj.word || ''}</h1>`;
+  } else {
+    cardContent = `
+      <h2>${wordObj.word || ''}</h2>
+      <h3 style="color: #28a745; margin: 20px 0;">${jpTranslation || 'N/A'}</h3>
+    `;
+  }
 
   area.innerHTML = `
     <div style="margin-bottom: 20px;">
@@ -1351,19 +1367,34 @@ function renderMemorizeCard() {
       </div>
     </div>
     
-    <h2 style="margin: 20px 0;">${wordObj.word || ''}</h2>
-    <div style="padding: 15px; background: #f8f9fa; border-radius: 6px; margin-bottom: 20px;">
-      <strong>Example:</strong><br>
-      <span style="color: #555;">${example.replace(/\n/g, '<br>')}</span>
+    <div style="cursor: pointer; padding: 40px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 8px; text-align: center; margin: 30px 0; min-height: 300px; display: flex; align-items: center; justify-content: center;" onclick="toggleMemorizeFlip()">
+      ${cardContent}
+      <div style="font-size: 0.85em; color: #999; margin-top: 20px; position: absolute; bottom: 20px; right: 20px;">${!memorizeFlipped ? 'クリックして確認' : 'クリックして戻す'}</div>
     </div>
-    <div style="margin-top: 15px;">
-      <button onclick="nextMemorize()" style="padding: 10px 20px; font-size: 1em;">${memorizeIndex + 1 === memorizeQueue.length ? 'Finish' : 'Next'}</button>
-    </div>
+    
+    ${!memorizeFlipped ? '' : `
+      <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: center;">
+        <button onclick="markMemorizeUnknown()" style="padding: 12px 30px; font-size: 1em; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">知らなかった ✗</button>
+        <button onclick="markMemorizeKnown()" style="padding: 12px 30px; font-size: 1em; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">知ってた ✓</button>
+      </div>
+    `}
   `;
 }
 
-function nextMemorize() {
+function toggleMemorizeFlip() {
+  memorizeFlipped = !memorizeFlipped;
+  renderMemorizeCard();
+}
+
+function markMemorizeKnown() {
   memorizeIndex += 1;
+  memorizeFlipped = false;
+  renderMemorizeCard();
+}
+
+function markMemorizeUnknown() {
+  memorizeIndex += 1;
+  memorizeFlipped = false;
   renderMemorizeCard();
 }
 
