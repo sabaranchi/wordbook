@@ -1567,11 +1567,8 @@ function showSection(name) {
   document.getElementById('quiz-section').style.display = name === 'quiz' ? 'block' : 'none';
   const batchSection = document.getElementById('batch-import-section');
   if (batchSection) batchSection.style.display = name === 'batch-import' ? 'block' : 'none';
-  const memorizeSection = document.getElementById('memorize-section');
-  if (memorizeSection) memorizeSection.style.display = name === 'memorize' ? 'block' : 'none';
 
   if (name === 'quiz') startQuiz();
-  if (name === 'memorize') startMemorize();
 }
 
 let debounceTimer;

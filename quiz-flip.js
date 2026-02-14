@@ -39,6 +39,7 @@ function startQuiz() {
     <div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
       <button onclick="toggleQuizMode()" style="margin-right:0.5rem;">Mode: ${modeLabel}</button>
       <button class="play-btn" title="Play pronunciation">🔊</button>
+      <button onclick="startMemorize()" style="margin-left:auto; background:#6f42c1; color:white;">Memorize</button>
     </div>
     <div class="quiz-card-container">
       <div id="quiz-card" class="flip-card" data-word="${question.word.replace(/"/g, '&quot;')}">
@@ -155,92 +156,77 @@ if (typeof window.checkAnswer === 'function') {
   delete window.checkAnswer;
 }
 
-// Memorize Mode Functions
-let memorizeState = null;
+// Memorize mode
+let currentMemorizeIndex = 0;
+let memorizeCardPool = [];
 
 function startMemorize() {
-  const memorizeArea = document.getElementById('memorize-area');
-  memorizeArea.innerHTML = '';
+  const quizArea = document.getElementById('quiz-area');
+  quizArea.innerHTML = '';
 
   const myWords = customWords.filter(w => w.userId === userId);
 
   if (myWords.length === 0) {
-    memorizeArea.innerHTML = '<h3>No words to memorize yet.</h3>';
+    quizArea.innerHTML = '<h3>No words to memorize yet.</h3>';
     return;
   }
 
-  // Shuffle words using Fisher-Yates algorithm
-  const shuffled = [...myWords];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
+  // ランダムに並べ替え
+  memorizeCardPool = [...myWords].sort(() => Math.random() - 0.5);
+  currentMemorizeIndex = 0;
 
-  memorizeState = {
-    words: shuffled,
-    current: 0
-  };
-
-  displayMemorizeCard();
-}
-
-function displayMemorizeCard() {
-  const memorizeArea = document.getElementById('memorize-area');
-  memorizeArea.innerHTML = '';
-
-  if (!memorizeState || memorizeState.current >= memorizeState.words.length) {
-    memorizeArea.innerHTML = '<h3>Memorize Complete! 🎉</h3><button onclick="showSection(\'add\')">Back to Add Word</button>';
-    return;
-  }
-
-  const word = memorizeState.words[memorizeState.current];
-  const totalWords = memorizeState.words.length;
-  const currentNum = memorizeState.current + 1;
-
-  // Get examples (first one only)
-  const exampleEn = word.example ? word.example.split(/\n|、/)[0] : '';
-  const exampleJp = word.example_jp ? word.example_jp.split(/\n|、/)[0] : '';
-
-  memorizeArea.innerHTML = `
-    <div style="margin-bottom:1rem; display:flex; gap:1rem; align-items:center;">
-      <h3 style="margin:0;">${currentNum} / ${totalWords}</h3>
-      <button class="play-btn" title="Play pronunciation">🔊</button>
-    </div>
-    <div class="memorize-card-container">
-      <div id="memorize-card" class="flip-card">
-        <div class="flip-card-inner">
-          <div class="flip-card-front">
-            <div class="memorize-front-content">
-              <div class="memorize-word">${word.word}</div>
-              <div class="memorize-example">${exampleEn}</div>
-            </div>
-          </div>
-          <div class="flip-card-back">
-            <div class="memorize-back-content">
-              <div class="memorize-meaning">${word.meaning_jp || '?'}</div>
-              <div class="memorize-example">${exampleJp}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div style="margin-top:2rem; display:flex; gap:2rem; justify-content:center;">
-      <button class="answer-btn answer-no" style="background-color:#ffcccc; padding:1rem 2rem; border:none; border-radius:8px; cursor:pointer; font-size:1.2rem;">
-        ✗ Didn't Know
-      </button>
-      <button class="answer-btn answer-yes" style="background-color:#ccffcc; padding:1rem 2rem; border:none; border-radius:8px; cursor:pointer; font-size:1.2rem;">
-        ✓ Knew It
-      </button>
+  quizArea.innerHTML = `
+    <div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
+      <button onclick="startQuiz()" style="margin-right:0.5rem;">← Back to Quiz</button>
+      <span style="flex:1; text-align:center; font-weight:bold;" id="memorize-progress"></span>
     </div>
   `;
 
-  const playBtn = memorizeArea.querySelector('.play-btn');
-  if (playBtn) {
-    playBtn.addEventListener('click', () => speak(String(word.word)));
+  showMemorizeCard();
+}
+
+function showMemorizeCard() {
+  if (currentMemorizeIndex >= memorizeCardPool.length) {
+    const quizArea = document.getElementById('quiz-area');
+    quizArea.innerHTML = '<h3>Memorize Complete! All words reviewed.</h3>';
+    setTimeout(() => startQuiz(), 2000);
+    return;
   }
 
-  const card = memorizeArea.querySelector('#memorize-card');
+  const question = memorizeCardPool[currentMemorizeIndex];
+  const progressText = `${currentMemorizeIndex + 1} / ${memorizeCardPool.length}`;
+
+  const quizArea = document.getElementById('quiz-area');
+  const progressDiv = quizArea.querySelector('#memorize-progress');
+  if (progressDiv) {
+    progressDiv.textContent = progressText;
+  }
+
+  // フロント：単語と例文
+  const frontText = question.word + (question.example_sentence ? `<br/><small style="color:#666;">${question.example_sentence}</small>` : '');
+  // バック：日本語訳
+  const backText = question.meaning_jp || '?';
+
+  const cardContainer = document.createElement('div');
+  cardContainer.className = 'quiz-card-container';
+  cardContainer.innerHTML = `
+    <div id="memorize-card" class="flip-card">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">${frontText}</div>
+        <div class="flip-card-back">${backText}</div>
+      </div>
+    </div>
+  `;
+
+  if (quizArea.querySelector('.quiz-card-container')) {
+    quizArea.querySelector('.quiz-card-container').replaceWith(cardContainer);
+  } else {
+    quizArea.appendChild(cardContainer);
+  }
+
+  const card = cardContainer.querySelector('#memorize-card');
   const cardFront = card.querySelector('.flip-card-front');
+  const cardBack = card.querySelector('.flip-card-back');
 
   // フロント（表）クリック: フリップのみ
   cardFront.addEventListener('click', (e) => {
@@ -248,70 +234,36 @@ function displayMemorizeCard() {
     card.classList.toggle('flipped');
   });
 
-  // ボタンクリック: 次へ進む（学習状態は更新しない）
-  const answerNoBtn = memorizeArea.querySelector('.answer-no');
-  const answerYesBtn = memorizeArea.querySelector('.answer-yes');
-
-  answerNoBtn.addEventListener('click', () => {
-    handleMemorizeAnswer(false);
+  // バック（裏）クリック: 次のカードに進む
+  cardBack.addEventListener('click', (e) => {
+    e.stopPropagation();
+    currentMemorizeIndex++;
+    showMemorizeCard();
   });
 
-  answerYesBtn.addEventListener('click', () => {
-    handleMemorizeAnswer(true);
-  });
-
-  // キーボード: 左矢印 = 知らなかった、右矢印 = 知ってた
-  const handleKeyPress = (e) => {
-    if (e.key === 'ArrowLeft') {
-      handleMemorizeAnswer(false);
-    } else if (e.key === 'ArrowRight') {
-      handleMemorizeAnswer(true);
-    }
-  };
-  document.addEventListener('keydown', handleKeyPress);
-
-  // スワイプ & タップジェスチャー（カード全体）
+  // スワイプ & タップジェスチャー（裏面でのみ判定）
   let touchStart = null;
-  const cardContainer = memorizeArea.querySelector('.memorize-card-container');
-  
   cardContainer.addEventListener('touchstart', (e) => {
     touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: Date.now() };
   });
 
   cardContainer.addEventListener('touchend', (e) => {
-    if (!touchStart) return;
-    
+    if (!touchStart || !card.classList.contains('flipped')) return;
+
     const touchEnd = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, time: Date.now() };
     const dx = touchEnd.x - touchStart.x;
     const dy = touchEnd.y - touchStart.y;
     const time = touchEnd.time - touchStart.time;
 
+    // スワイプ: 距離 > 50px & 時間 < 500ms
     const isSwipe = Math.abs(dx) > 50 && Math.abs(dy) < 30 && time < 500;
+    // タップ: 移動 < 10px & 時間 < 300ms
+    const isTap = Math.abs(dx) < 10 && Math.abs(dy) < 10 && time < 300;
 
-    if (isSwipe) {
-      // 右スワイプ = 知ってた、左スワイプ = 知らなかった
-      const knew = dx > 0;
-      handleMemorizeAnswer(knew);
+    if (isSwipe || isTap) {
+      // 右スワイプ / タップ = 次のカード
+      currentMemorizeIndex++;
+      showMemorizeCard();
     }
   });
-
-  // クリック時：左右の位置で判定
-  card.addEventListener('click', (e) => {
-    if (card.classList.contains('flipped')) {
-      const cardRect = card.getBoundingClientRect();
-      const clickX = e.clientX;
-      const cardCenter = cardRect.left + cardRect.width / 2;
-      const knew = clickX > cardCenter;
-      if (Math.abs(clickX - cardCenter) > cardRect.width * 0.1) {
-        handleMemorizeAnswer(knew);
-      }
-    }
-  });
-}
-
-function handleMemorizeAnswer(knew) {
-  // Update memorize state and move to next word
-  // Note: Unlike quiz, we don't update learning status here
-  memorizeState.current++;
-  displayMemorizeCard();
 }
