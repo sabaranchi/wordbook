@@ -266,4 +266,7 @@ function showMemorizeCard() {
       showMemorizeCard();
     }
   });
+
+  // 単語の発音を自動再生
+  speak(String(question.word));
 }
