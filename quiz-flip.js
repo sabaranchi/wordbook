@@ -8,8 +8,33 @@ function toggleQuizMode() {
   startQuiz();
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function textToHtml(value) {
+  return escapeHtml(value).replace(/\n/g, '<br/>');
+}
+
 function getExampleText(word) {
-  return String(word && (word.example || word.example_sentence) || '').trim();
+  const raw = String((word && (word.example || word.example_sentence)) || '');
+  const normalized = raw
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p|li|ul|ol|h[1-6])>/gi, '\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\r/g, '\n');
+
+  const firstLine = normalized
+    .split('\n')
+    .map(line => line.trim())
+    .find(line => line.length > 0);
+
+  return firstLine || '';
 }
 
 function startQuiz() {
@@ -211,14 +236,17 @@ function showMemorizeCard() {
 
   // フロント：単語と例文
   const exampleText = getExampleText(question);
-  const frontText = question.word + (exampleText ? `<br/><small style="color:#666;">${exampleText}</small>` : '');
+  const frontText = `
+    <div class="memorize-front-word">${textToHtml(question.word || '?')}</div>
+    ${exampleText ? `<div class="memorize-front-example">${textToHtml(exampleText)}</div>` : ''}
+  `;
   // バック：日本語訳
-  const backText = question.meaning_jp || '?';
+  const backText = `<div class="memorize-back-meaning">${textToHtml(question.meaning_jp || '?')}</div>`;
 
   const cardContainer = document.createElement('div');
   cardContainer.className = 'quiz-card-container';
   cardContainer.innerHTML = `
-    <div id="memorize-card" class="flip-card">
+    <div id="memorize-card" class="flip-card text-heavy-card">
       <div class="flip-card-inner">
         <div class="flip-card-front">${frontText}</div>
         <div class="flip-card-back">${backText}</div>
@@ -324,14 +352,20 @@ function showSentenceCard() {
   }
 
   // フロント：例文
-  const frontText = getExampleText(question) || '?';
+  const exampleText = getExampleText(question) || '?';
+  const frontText = `<div class="sentence-front-example">${textToHtml(exampleText)}</div>`;
   // バック：単語と日本語訳
-  const backText = `${question.word || '?'}${question.meaning_jp ? `<br/><small style="color:#666;">${question.meaning_jp}</small>` : ''}`;
+  const backText = `
+    <div class="sentence-back-wrap">
+      <div class="sentence-back-word">${textToHtml(question.word || '?')}</div>
+      <div class="sentence-back-meaning">${textToHtml(question.meaning_jp || '?')}</div>
+    </div>
+  `;
 
   const cardContainer = document.createElement('div');
   cardContainer.className = 'quiz-card-container';
   cardContainer.innerHTML = `
-    <div id="sentence-card" class="flip-card">
+    <div id="sentence-card" class="flip-card text-heavy-card">
       <div class="flip-card-inner">
         <div class="flip-card-front">${frontText}</div>
         <div class="flip-card-back">${backText}</div>

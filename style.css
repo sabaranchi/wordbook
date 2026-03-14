@@ -359,6 +359,10 @@ section {
   justify-content: center;
   border-radius: 8px;
   text-align: center;
+  padding: 0.75rem;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .flip-card-front {
@@ -374,6 +378,66 @@ section {
   font-size: 1rem;
   font-weight: bold;
   transform: rotateY(180deg);
+}
+
+/* Sentence/Memorize cards use richer content and need larger readable layout. */
+.text-heavy-card {
+  min-height: 190px;
+  height: 190px;
+}
+
+.text-heavy-card .flip-card-front,
+.text-heavy-card .flip-card-back {
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 14px 16px;
+  overflow-y: auto;
+  line-height: 1.45;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.text-heavy-card .flip-card-back {
+  background: #0b4ea2;
+}
+
+.memorize-front-word,
+.sentence-back-word {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.memorize-front-example,
+.sentence-front-example,
+.memorize-back-meaning,
+.sentence-back-meaning {
+  font-size: 0.98rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.memorize-front-example {
+  margin-top: 0.65rem;
+  color: #eaf2ff;
+}
+
+.memorize-back-meaning {
+  color: #f3f8ff;
+}
+
+.sentence-back-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+}
+
+.sentence-back-meaning {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  color: #e8f1ff;
 }
 
 .quiz-answer-hint {
