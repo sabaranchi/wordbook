@@ -37,6 +37,66 @@ function getExampleText(word) {
   return firstLine || '';
 }
 
+const sentenceJaCache = new Map();
+
+function getStoredExampleJa(word) {
+  return String(
+    (word && (
+      word.example_jp ||
+      word.example_ja ||
+      word.example_translation ||
+      word.exampleTranslationJa
+    )) || ''
+  ).trim();
+}
+
+async function fetchSentenceJa(exampleText) {
+  const source = String(exampleText || '').trim();
+  if (!source) return '';
+
+  if (sentenceJaCache.has(source)) {
+    return sentenceJaCache.get(source);
+  }
+
+  try {
+    const res = await fetch(`/api/sentence-translate?q=${encodeURIComponent(source)}`);
+    if (res.ok) {
+      const data = await res.json();
+      const translated = String((data && data.translation) || '').trim();
+      if (translated) {
+        sentenceJaCache.set(source, translated);
+        return translated;
+      }
+    }
+
+    if (!res.ok) {
+      throw new Error(`sentence_translate_http_${res.status}`);
+    }
+  } catch (e) {
+    console.warn('fetchSentenceJa via API failed', e);
+  }
+
+  try {
+    const fallbackUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ja&dt=t&q=${encodeURIComponent(source)}`;
+    const fallbackRes = await fetch(fallbackUrl);
+    if (!fallbackRes.ok) {
+      throw new Error(`sentence_translate_fallback_http_${fallbackRes.status}`);
+    }
+
+    const data = await fallbackRes.json();
+    const translated = Array.isArray(data) && Array.isArray(data[0])
+      ? data[0].map(part => (Array.isArray(part) ? String(part[0] || '') : '')).join('').trim()
+      : '';
+
+    sentenceJaCache.set(source, translated);
+    return translated;
+  } catch (e) {
+    console.warn('fetchSentenceJa fallback failed', e);
+    sentenceJaCache.set(source, '');
+    return '';
+  }
+}
+
 function startQuiz() {
   const quizArea = document.getElementById('quiz-area');
   quizArea.innerHTML = '';
@@ -355,10 +415,14 @@ function showSentenceCard() {
   const exampleText = getExampleText(question) || '?';
   const frontText = `<div class="sentence-front-example">${textToHtml(exampleText)}</div>`;
   // バック：単語と日本語訳
+  const storedExampleJa = getStoredExampleJa(question);
+  const initialExampleJaText = storedExampleJa || 'カードを裏返すと例文訳を表示します';
   const backText = `
     <div class="sentence-back-wrap">
       <div class="sentence-back-word">${textToHtml(question.word || '?')}</div>
       <div class="sentence-back-meaning">${textToHtml(question.meaning_jp || '?')}</div>
+      <div class="sentence-back-example-ja-label">Example (JP)</div>
+      <div class="sentence-back-example-ja" data-role="sentence-example-ja">${textToHtml(initialExampleJaText)}</div>
     </div>
   `;
 
@@ -382,11 +446,32 @@ function showSentenceCard() {
   const card = cardContainer.querySelector('#sentence-card');
   const cardFront = card.querySelector('.flip-card-front');
   const cardBack = card.querySelector('.flip-card-back');
+  const exampleJaEl = cardBack.querySelector('[data-role="sentence-example-ja"]');
+  let hasRequestedSentenceJa = false;
+
+  const requestSentenceJa = async () => {
+    if (hasRequestedSentenceJa) return;
+    hasRequestedSentenceJa = true;
+    if (!exampleJaEl) return;
+
+    if (storedExampleJa) {
+      exampleJaEl.innerHTML = textToHtml(storedExampleJa);
+      return;
+    }
+
+    exampleJaEl.innerHTML = '翻訳中...';
+    const translated = await fetchSentenceJa(exampleText);
+    if (!cardContainer.isConnected) return;
+    exampleJaEl.innerHTML = textToHtml(translated || '例文訳を取得できませんでした');
+  };
 
   // フロント（表）クリック: フリップのみ
   cardFront.addEventListener('click', (e) => {
     e.stopPropagation();
-    card.classList.toggle('flipped');
+    const flipped = card.classList.toggle('flipped');
+    if (flipped) {
+      requestSentenceJa();
+    }
   });
 
   // バック（裏）クリック: 次のカードに進む

@@ -440,6 +440,23 @@ section {
   color: #e8f1ff;
 }
 
+.sentence-back-example-ja-label {
+  margin-top: 0.85rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: #bed8ff;
+  text-transform: uppercase;
+}
+
+.sentence-back-example-ja {
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.3);
+  color: #f8fbff;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
 .quiz-answer-hint {
   font-size: 0.9rem;
   opacity: 0.8;
