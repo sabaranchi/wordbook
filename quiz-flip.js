@@ -39,7 +39,8 @@ function startQuiz() {
     <div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
       <button onclick="toggleQuizMode()" style="margin-right:0.5rem;">Mode: ${modeLabel}</button>
       <button class="play-btn" title="Play pronunciation">🔊</button>
-      <button onclick="startMemorize()" style="margin-left:auto; background:#6f42c1; color:white;">Memorize</button>
+      <button onclick="startSentence()" style="margin-left:auto; background:#198754; color:white;">Sentence</button>
+      <button onclick="startMemorize()" style="background:#6f42c1; color:white;">Memorize</button>
     </div>
     <div class="quiz-card-container">
       <div id="quiz-card" class="flip-card" data-word="${question.word.replace(/"/g, '&quot;')}">
@@ -159,6 +160,8 @@ if (typeof window.checkAnswer === 'function') {
 // Memorize mode
 let currentMemorizeIndex = 0;
 let memorizeCardPool = [];
+let currentSentenceIndex = 0;
+let sentenceCardPool = [];
 
 function startMemorize() {
   const quizArea = document.getElementById('quiz-area');
@@ -269,4 +272,117 @@ function showMemorizeCard() {
 
   // 単語の発音を自動再生
   speak(String(question.word));
+}
+
+// Sentence mode
+function startSentence() {
+  const quizArea = document.getElementById('quiz-area');
+  quizArea.innerHTML = '';
+
+  const myWords = customWords.filter(w => w.userId === userId);
+  const wordsWithSentence = myWords.filter(w => String(w.example_sentence || '').trim());
+
+  if (wordsWithSentence.length === 0) {
+    quizArea.innerHTML = '<h3>No example sentences to review yet.</h3>';
+    return;
+  }
+
+  // ランダムに並べ替え
+  sentenceCardPool = [...wordsWithSentence].sort(() => Math.random() - 0.5);
+  currentSentenceIndex = 0;
+
+  quizArea.innerHTML = `
+    <div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
+      <button onclick="startQuiz()" style="margin-right:0.5rem;">← Back to Quiz</button>
+      <span style="flex:1; text-align:center; font-weight:bold;" id="sentence-progress"></span>
+    </div>
+  `;
+
+  showSentenceCard();
+}
+
+function showSentenceCard() {
+  if (currentSentenceIndex >= sentenceCardPool.length) {
+    const quizArea = document.getElementById('quiz-area');
+    quizArea.innerHTML = '<h3>Sentence Review Complete! All example sentences reviewed.</h3>';
+    setTimeout(() => startQuiz(), 2000);
+    return;
+  }
+
+  const question = sentenceCardPool[currentSentenceIndex];
+  const progressText = `${currentSentenceIndex + 1} / ${sentenceCardPool.length}`;
+
+  const quizArea = document.getElementById('quiz-area');
+  const progressDiv = quizArea.querySelector('#sentence-progress');
+  if (progressDiv) {
+    progressDiv.textContent = progressText;
+  }
+
+  // フロント：例文
+  const frontText = question.example_sentence || '?';
+  // バック：単語と日本語訳
+  const backText = `${question.word || '?'}${question.meaning_jp ? `<br/><small style="color:#666;">${question.meaning_jp}</small>` : ''}`;
+
+  const cardContainer = document.createElement('div');
+  cardContainer.className = 'quiz-card-container';
+  cardContainer.innerHTML = `
+    <div id="sentence-card" class="flip-card">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">${frontText}</div>
+        <div class="flip-card-back">${backText}</div>
+      </div>
+    </div>
+  `;
+
+  if (quizArea.querySelector('.quiz-card-container')) {
+    quizArea.querySelector('.quiz-card-container').replaceWith(cardContainer);
+  } else {
+    quizArea.appendChild(cardContainer);
+  }
+
+  const card = cardContainer.querySelector('#sentence-card');
+  const cardFront = card.querySelector('.flip-card-front');
+  const cardBack = card.querySelector('.flip-card-back');
+
+  // フロント（表）クリック: フリップのみ
+  cardFront.addEventListener('click', (e) => {
+    e.stopPropagation();
+    card.classList.toggle('flipped');
+  });
+
+  // バック（裏）クリック: 次のカードに進む
+  cardBack.addEventListener('click', (e) => {
+    e.stopPropagation();
+    currentSentenceIndex++;
+    showSentenceCard();
+  });
+
+  // スワイプ & タップジェスチャー（裏面でのみ判定）
+  let touchStart = null;
+  cardContainer.addEventListener('touchstart', (e) => {
+    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: Date.now() };
+  });
+
+  cardContainer.addEventListener('touchend', (e) => {
+    if (!touchStart || !card.classList.contains('flipped')) return;
+
+    const touchEnd = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, time: Date.now() };
+    const dx = touchEnd.x - touchStart.x;
+    const dy = touchEnd.y - touchStart.y;
+    const time = touchEnd.time - touchStart.time;
+
+    // スワイプ: 距離 > 50px & 時間 < 500ms
+    const isSwipe = Math.abs(dx) > 50 && Math.abs(dy) < 30 && time < 500;
+    // タップ: 移動 < 10px & 時間 < 300ms
+    const isTap = Math.abs(dx) < 10 && Math.abs(dy) < 10 && time < 300;
+
+    if (isSwipe || isTap) {
+      // 右スワイプ / タップ = 次のカード
+      currentSentenceIndex++;
+      showSentenceCard();
+    }
+  });
+
+  // 例文の発音を自動再生
+  speak(String(question.example_sentence || question.word));
 }
