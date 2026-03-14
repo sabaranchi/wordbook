@@ -8,6 +8,10 @@ function toggleQuizMode() {
   startQuiz();
 }
 
+function getExampleText(word) {
+  return String(word && (word.example || word.example_sentence) || '').trim();
+}
+
 function startQuiz() {
   const quizArea = document.getElementById('quiz-area');
   quizArea.innerHTML = '';
@@ -39,7 +43,7 @@ function startQuiz() {
     <div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
       <button onclick="toggleQuizMode()" style="margin-right:0.5rem;">Mode: ${modeLabel}</button>
       <button class="play-btn" title="Play pronunciation">🔊</button>
-      <button onclick="startSentence()" style="margin-left:auto; background:#198754; color:white;">Sentence</button>
+      <button onclick="startSentence()" style="margin-left:auto; background:#0d6efd; color:white;">Sentence</button>
       <button onclick="startMemorize()" style="background:#6f42c1; color:white;">Memorize</button>
     </div>
     <div class="quiz-card-container">
@@ -206,7 +210,8 @@ function showMemorizeCard() {
   }
 
   // フロント：単語と例文
-  const frontText = question.word + (question.example_sentence ? `<br/><small style="color:#666;">${question.example_sentence}</small>` : '');
+  const exampleText = getExampleText(question);
+  const frontText = question.word + (exampleText ? `<br/><small style="color:#666;">${exampleText}</small>` : '');
   // バック：日本語訳
   const backText = question.meaning_jp || '?';
 
@@ -280,7 +285,7 @@ function startSentence() {
   quizArea.innerHTML = '';
 
   const myWords = customWords.filter(w => w.userId === userId);
-  const wordsWithSentence = myWords.filter(w => String(w.example_sentence || '').trim());
+  const wordsWithSentence = myWords.filter(w => getExampleText(w));
 
   if (wordsWithSentence.length === 0) {
     quizArea.innerHTML = '<h3>No example sentences to review yet.</h3>';
@@ -319,7 +324,7 @@ function showSentenceCard() {
   }
 
   // フロント：例文
-  const frontText = question.example_sentence || '?';
+  const frontText = getExampleText(question) || '?';
   // バック：単語と日本語訳
   const backText = `${question.word || '?'}${question.meaning_jp ? `<br/><small style="color:#666;">${question.meaning_jp}</small>` : ''}`;
 
@@ -384,5 +389,5 @@ function showSentenceCard() {
   });
 
   // 例文の発音を自動再生
-  speak(String(question.example_sentence || question.word));
+  speak(String(getExampleText(question) || question.word));
 }
